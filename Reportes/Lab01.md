@@ -15,6 +15,36 @@ system shall `<response>` within `<deadline>`*) — then the task that implement
 |---|---|---|---|---|---|---|
 | Control loop | REQ-CTRL-01 | Hard | 10 ms | = T | ____ | <GPIO + analyzer / trace> |
 
+# Lab 2 — Diagrama del superloop
+
+```mermaid
+flowchart TD
+    A["Temporizador cada 1 ms<br/>ISR"] --> B["Incrementa ticks_pending<br/>Actualiza backlog_peak"]
+    B --> C["Superloop: while (1)"]
+
+    C --> D["Lee consola<br/>GPIO20"]
+    D --> E["Actualiza pantalla<br/>GPIO23"]
+    E --> F["Envía telemetría<br/>GPIO21"]
+    F --> G{"¿Hay tick pendiente?"}
+
+    G -- Sí --> H["Muestrea presión y e-stop<br/>GPIO18"]
+    H --> I{"¿Van 10 muestras?"}
+    I -- Sí --> J["Control PI y válvula<br/>GPIO19"]
+    I -- No --> K["Procesa lote de flujo<br/>GPIO22"]
+    J --> K
+    K --> C
+
+    G -- No --> K
+```
+
+## Lectura del flujo
+
+- El temporizador solo registra que pasó 1 ms.
+- El superloop revisa las tareas en un orden fijo.
+- Cada 10 muestreos se ejecuta el control de la válvula.
+- El comando `calib` bloquea el superloop; por ello se acumulan ticks pendientes.
+
+
 ## 2. ADRs
 
 ### ADR-001 — `<title>`
