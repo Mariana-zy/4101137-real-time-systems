@@ -15,7 +15,7 @@ system shall `<response>` within `<deadline>`*) — then the task that implement
 |---|---|---|---|---|---|---|
 | Control loop | REQ-CTRL-01 | Hard | 10 ms | = T | ____ | <GPIO + analyzer / trace> |
 
-# Lab 2 — Diagrama del superloop
+## Lab 2 — Diagrama del superloop
 
 ```mermaid
 flowchart TD
