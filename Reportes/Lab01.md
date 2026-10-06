@@ -26,21 +26,23 @@
 ```mermaid
 flowchart TD
     T["Temporizador cada 1 ms: ISR"] --> P["Incrementa ticks_pending y actualiza backlog_peak"]
-    F["Flanco de flujo en D9: ISR"] --> Q["flow_pulses++"]
-    P --> L["Superloop: while (1)"]
-    Q --> L
+    F["Flanco de flujo D9 / PC7: ISR"] --> Q["Incrementa flow_pulses"]
 
-    L --> C["Lee consola PB4: D5"]
-    C --> H["Actualiza pantalla OLED PA9: D8"]
-    H --> E["Envía telemetría PB10: D6"]
+    P --> L["Superloop: while (1)"]
+
+    L --> C["Lee consola D5 / PB4"]
+    C --> H["Actualiza pantalla OLED D8 / PA9"]
+    H --> E["Envía telemetría D6 / PB10"]
     E --> D{"¿Hay tick pendiente?"}
 
-    D -- Sí --> S["Muestrea presión y e-stop PB3: D3"]
+    D -- Sí --> S["Muestrea presión y e-stop D3 / PB3"]
     S --> K{"¿Van 10 muestras?"}
-    K -- Sí --> R["Control y válvula PB5: D4"]
-    K -- No --> B["Procesa lote de flujo PA8: D7"]
+    K -- Sí --> R["Control D4 / PB5 y válvula PA5"]
+    K -- No --> B["Revisa y procesa lote de flujo D7 / PA8"]
     R --> B
     D -- No --> B
+
+    Q --> B
     B --> L
 ```
 
