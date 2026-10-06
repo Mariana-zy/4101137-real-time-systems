@@ -12,6 +12,7 @@
 | REQ-HMI-01 | Mientras la HMI está habilitada, deberá actualizar la pantalla cada 500 ms. |
 | REQ-FLOW-01 | Cuando se acumulen 100 pulsos de flujo, deberá procesar el lote en la siguiente iteración disponible del superloop. |
 
+
 | Tarea | Req. | Tipo | Período / activación | Fecha límite | `C_i` observado | Método |
 |---|---|---|---|---|---:|---|
 | Muestreo | REQ-SAMP-01 | Duro | 1 ms | 1 ms | 5 µs | Ancho de pulso D3, Logic 2 |
