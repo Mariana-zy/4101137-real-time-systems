@@ -1,6 +1,6 @@
 # RET — Timing Evidence Report
 
-**Grupo:** `Mariana Zuluaga Yepes`  `María de los Angeles Prieto Ortega`      ·       **Placa:** `Nucleo-L476RG`
+**Grupo:** `Mariana Zuluaga Yepes` `María Prieto Ortega` `Rafael Torres Choperena`  ·  **Placa:** `Nucleo-L476RG`
 
 ## 1. El sistema y su conjunto de tareas
 
@@ -65,11 +65,9 @@ flowchart TD
 ### ADR-001 — `<title>`
 **Context:** … · **Decision:** … · **Justification (with numbers):** … · **Status:** …
 
-## 3. Evidence by week
+## 3. Evidencia por semana
 
 Each entry cites the `REQ`(s) it verifies.
-
-## 3. Evidencia por semana
 
 ### Semana 2 — línea base del superloop
 
