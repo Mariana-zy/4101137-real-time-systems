@@ -1,6 +1,6 @@
 # RET — Timing Evidence Report
 
-**Grupo:** `Mariana Zuluaga Yepes` `María Prieto Ortega` `Rafael Torres Choperena`  ·  **Placa:** `Nucleo-L476RG`
+**Grupo:** `María Prieto Ortega` `Rafael Torres Choperena` `Mariana Zuluaga Yepes`  ·  **Placa:** `Nucleo-L476RG`
 
 ## 1. El sistema y su conjunto de tareas
 
