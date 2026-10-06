@@ -48,11 +48,17 @@ flowchart TD
 
 ## Lectura del flujo
 
-- El temporizador solo registra que pasó 1 ms.
-- El superloop revisa las tareas en un orden fijo.
-- Cada 10 muestreos se ejecuta el control de la válvula.
-- El comando `calib` bloquea el superloop; por ello se acumulan ticks pendientes.
+- El temporizador genera una interrupción cada 1 ms. La ISR no ejecuta el muestreo: incrementa `ticks_pending` y actualiza `backlog_peak` si se acumulan ticks.
 
+- El superloop recorre siempre el mismo orden: consola, pantalla OLED y telemetría. Después revisa si hay un tick de muestreo pendiente.
+
+- Si existe un tick pendiente, ejecuta el muestreo de presión y e-stop en D3. Cada diez muestras ejecuta además el control en D4 y actualiza la válvula en PA5.
+
+- La entrada de flujo llega por D9/PC7. Su ISR incrementa `flow_pulses`; el superloop revisa ese contador en la tarea de lote de flujo, instrumentada en D7.
+
+- La tarea de flujo se revisa en cada vuelta del ciclo. Cuando no hay tick pendiente, el superloop pasa directamente desde la telemetría hacia la revisión de flujo.
+
+- Como todas las tareas comparten un solo `while (1)`, una tarea lenta bloquea temporalmente a las demás. La actualización de OLED y el comando `calib` pueden retrasar el muestreo y acumular `ticks_pending`.
 
 ## 2. ADRs
 
@@ -62,6 +68,33 @@ flowchart TD
 ## 3. Evidence by week
 
 Each entry cites the `REQ`(s) it verifies.
+
+## 3. Evidencia por semana
+
+### Semana 2 — línea base del superloop
+
+**Placa:** Nucleo-L476RG  
+**Instrumento:** Logic 2  
+**Señales:** D3 muestreo, D4 control, D5 consola, D6 telemetría,
+D7 lote de flujo, D8 OLED y D9 entrada de flujo.
+
+| REQ(s) | Condición | Medición | Resultado | 
+|---|---|---|---:|---|
+| REQ-SAMP-01 | OLED + caché | Frecuencia media de D3 | 1.001 kHz |
+| REQ-SAMP-01 | OLED + caché | Período máximo de D3 | 23.87 ms |
+| REQ-SAMP-01 | OLED + caché | Desviación estándar | 1.062 ms |
+| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Frecuencia media de D3 | 1.002 kHz |
+| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Período máximo de D3 | 25.58 ms |
+| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Jitter tardío máximo | 24.58 ms |
+| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | `backlog_peak` normal | 30 ticks |
+| REQ-FLOW-01 | D3 conectado a D9 | Latencia D9 → D7 | 12.5 µs |
+| REQ-FLOW-01 | D3 conectado a D9 | `C_i` de lote de flujo en D7 | 70.5 µs | 
+| REQ-SAMP-01, REQ-CTRL-01 | Comando `calib` | Duración de `calib` en D5 | 408.882 ms | 
+| REQ-SAMP-01 | Comando `calib` | Mayor período de D3 | 432.332 ms | 
+| REQ-SAMP-01 | Comando `calib` | Jitter tardío | 431.332 ms | 
+| REQ-SAMP-01 | Comando `calib` | `backlog_peak` | 432 ticks | 
+
+La frecuencia media se mantuvo cercana a 1 kHz, pero la actualización de la OLED produjo huecos de hasta 25.58 ms en D3. El comando `calib` bloqueó el único superloop durante 408.882 ms, acumuló 432 ticks y retrasó tanto el muestreo como el control.
 
 ### Week 2 — superloop baseline (state the board)
 <jitter/latency table + a one-sentence reading>
