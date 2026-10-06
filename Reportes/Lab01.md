@@ -1,7 +1,6 @@
 # RET — Timing Evidence Report
 
-**Grupo:** `<Mariana Zuluaga Yepes>`       ·       **Placa:** `<Nucleo-L476RG>`
-          `<María de los Angeles Prieto Ortega>`
+**Grupo:** `<Mariana Zuluaga Yepes>`  `<María de los Angeles Prieto Ortega>`      ·       **Placa:** `<Nucleo-L476RG>`
 
 ## 1. El sistema y su conjunto de tareas
 
@@ -26,22 +25,23 @@
 
 ```mermaid
 flowchart TD
-    A["Temporizador cada 1 ms<br/>ISR"] --> B["Incrementa ticks_pending<br/>Actualiza backlog_peak"]
-    B --> C["Superloop: while (1)"]
+    T["Temporizador cada 1 ms: ISR"] --> P["ticks_pending++ y backlog_peak"]
+    F["Flanco de flujo en D9: ISR"] --> Q["flow_pulses++"]
+    P --> L["Superloop: while (1)"]
+    Q --> L
 
-    C --> D["Lee consola<br/>GPIO20"]
-    D --> E["Actualiza pantalla<br/>GPIO23"]
-    E --> F["Envía telemetría<br/>GPIO21"]
-    F --> G{"¿Hay tick pendiente?"}
+    L --> C["Consola: D5"]
+    C --> H["Pantalla OLED: D8"]
+    H --> E["Telemetría: D6"]
+    E --> D{"¿Hay tick pendiente?"}
 
-    G -- Sí --> H["Muestrea presión y e-stop<br/>GPIO18"]
-    H --> I{"¿Van 10 muestras?"}
-    I -- Sí --> J["Control PI y válvula<br/>GPIO19"]
-    I -- No --> K["Procesa lote de flujo<br/>GPIO22"]
-    J --> K
-    K --> C
-
-    G -- No --> K
+    D -- Sí --> S["Muestreo y e-stop: D3"]
+    S --> K{"¿Van 10 muestras?"}
+    K -- Sí --> R["Control y válvula: D4"]
+    K -- No --> B["Lote de flujo: D7"]
+    R --> B
+    D -- No --> B
+    B --> L
 ```
 
 ## Lectura del flujo
