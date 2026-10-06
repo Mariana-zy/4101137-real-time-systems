@@ -1,21 +1,28 @@
 # RET — Timing Evidence Report
 
-**Team:** `<Mariana Zuluaga Yepes>` · **Boards:** `<ESP32-C6 and STM32L476>`
+**Grupo:** `<Mariana Zuluaga Yepes>`       ·       **Placa:** `<Nucleo-L476RG>`
+          `<María de los Angeles Prieto Ortega>`
 
-## 1. The system and its task set
+## 1. El sistema y su conjunto de tareas
 
-Requirements first — one sentence each, EARS style (*when/while `<condition>`, the
-system shall `<response>` within `<deadline>`*) — then the task that implements them:
-
-| ID | Requirement |
+| ID | Requisito |
 |---|---|
-| REQ-CTRL-01 | While the system is irrigating, the control loop shall run every 10 ms (deadline = period). |
+| REQ-SAMP-01 | Mientras el sistema está activo, deberá ejecutar el muestreo de presión y e-stop cada 1 ms, dentro de un plazo de 1 ms. |
+| REQ-CTRL-01 | Mientras el sistema está irrigando, deberá ejecutar el control cada 10 ms, dentro de un plazo de 10 ms. |
+| REQ-TEL-01 | Mientras el sistema está activo, deberá publicar telemetría cada 1 s. |
+| REQ-HMI-01 | Mientras la HMI está habilitada, deberá actualizar la pantalla cada 500 ms. |
+| REQ-FLOW-01 | Cuando se acumulen 100 pulsos de flujo, deberá procesar el lote en la siguiente iteración disponible del superloop. |
 
-| Task | Req. | Type (H/F/S) | Period | Deadline | Measured C_i | How it was measured |
-|---|---|---|---|---|---|---|
-| Control loop | REQ-CTRL-01 | Hard | 10 ms | = T | ____ | <GPIO + analyzer / trace> |
+| Tarea | Req. | Tipo | Período / activación | Fecha límite | `C_i` observado | Método |
+|---|---|---|---|---|---:|---|
+| Muestreo | REQ-SAMP-01 | Duro | 1 ms | 1 ms | 5 µs | Ancho de pulso D3, Logic 2 |
+| Control | REQ-CTRL-01 | Duro | 10 ms | 10 ms | 2.5 µs | Ancho de pulso D4, Logic 2 |
+| Consola (`help`) | — | Firme | Por evento | No definida | 1.313 ms | Ancho de pulso D5, Logic 2 |
+| Telemetría | REQ-TEL-01 | Suave | 1 s | 1 s | 6.1555 ms | Ancho de pulso D6, Logic 2 |
+| Lote de flujo | REQ-FLOW-01 | Firme | Cada 100 pulsos | No definida | 70.5 µs | Ancho de pulso D7, Logic 2 |
+| Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | 25.06 ms | Ancho de pulso D8, Logic 2 |
 
-## Lab 2 — Diagrama del superloop
+## Diagrama del superloop — Lab 2, tarea A
 
 ```mermaid
 flowchart TD
