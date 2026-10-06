@@ -95,8 +95,15 @@ D7 lote de flujo, D8 OLED y D9 entrada de flujo.
 
 La frecuencia media se mantuvo cercana a 1 kHz, pero la actualización de la OLED produjo huecos de hasta 25.58 ms en D3. El comando `calib` bloqueó el único superloop durante 408.882 ms, acumuló 432 ticks y retrasó tanto el muestreo como el control.
 
-### Week 2 — superloop baseline (state the board)
-<jitter/latency table + a one-sentence reading>
+### Análisis de causa raíz del comando `calib`
+
+En `firmware/superloop/src/main.c:409`, la función `cmd_calib()` ejecuta
+`k_busy_wait(400)` dentro de un ciclo de 1000 rondas. Esto bloquea el
+superloop aproximadamente 400 ms. El comando se invoca desde
+`console_handle()` en la línea 434 y la consola se ejecuta dentro del único
+`while (1)` en la línea 503. Mientras la calibración no retorna, el programa
+no atiende `ticks_pending`; por ello se observó un período máximo de D3 de
+432.332 ms y `backlog_peak=432`.
 
 ### Week 3 — S3 baseline and silicon comparison
 …
