@@ -76,21 +76,21 @@ Each entry cites the `REQ`(s) it verifies.
 **Señales:** D3 muestreo, D4 control, D5 consola, D6 telemetría,
 D7 lote de flujo, D8 OLED y D9 entrada de flujo.
 
-| REQ(s) | Condición | Medición | Resultado | 
-|---|---|---|---:|---|
-| REQ-SAMP-01 | OLED + caché | Frecuencia media de D3 | 1.001 kHz |
-| REQ-SAMP-01 | OLED + caché | Período máximo de D3 | 23.87 ms |
-| REQ-SAMP-01 | OLED + caché | Desviación estándar | 1.062 ms |
-| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Frecuencia media de D3 | 1.002 kHz |
-| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Período máximo de D3 | 25.58 ms |
-| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Jitter tardío máximo | 24.58 ms |
-| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | `backlog_peak` normal | 30 ticks |
-| REQ-FLOW-01 | D3 conectado a D9 | Latencia D9 → D7 | 12.5 µs |
-| REQ-FLOW-01 | D3 conectado a D9 | `C_i` de lote de flujo en D7 | 70.5 µs | 
-| REQ-SAMP-01, REQ-CTRL-01 | Comando `calib` | Duración de `calib` en D5 | 408.882 ms | 
-| REQ-SAMP-01 | Comando `calib` | Mayor período de D3 | 432.332 ms | 
-| REQ-SAMP-01 | Comando `calib` | Jitter tardío | 431.332 ms | 
-| REQ-SAMP-01 | Comando `calib` | `backlog_peak` | 432 ticks | 
+| REQ(s) | Condición | Medición | Criterio | Resultado | Evidencia |
+|---|---|---|---|---:|---|
+| REQ-SAMP-01 | OLED + caché | Frecuencia media de D3 | Objetivo: ≈ 1 kHz | 1.001 kHz | Figura W2-1 |
+| REQ-SAMP-01 | OLED + caché | Período máximo de D3 | ≤ 1 ms | 23.87 ms — No cumple | Figura W2-1 |
+| REQ-SAMP-01 | OLED + caché | Desviación estándar | Referencia de variación | 1.062 ms | Figura W2-1 |
+| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Frecuencia media de D3 | Objetivo: ≈ 1 kHz | 1.002 kHz | Figura W2-2 |
+| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Período máximo de D3 | ≤ 1 ms | 25.58 ms — No cumple | Figura W2-2 |
+| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Jitter tardío máximo | 0 ms para cumplir el período de 1 ms | 24.58 ms — No cumple | Figura W2-2 |
+| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | `backlog_peak` normal | 0 ticks acumulados | 30 ticks — No cumple | Figura W2-3 |
+| REQ-FLOW-01 | D3 conectado a D9 | Latencia D9 → D7 | Sin límite numérico definido | 12.5 µs | Figura W2-4 |
+| REQ-FLOW-01 | D3 conectado a D9 | `C_i` de lote de flujo en D7 | Referencia de ejecución | 70.5 µs | Figura W2-4 |
+| REQ-SAMP-01, REQ-CTRL-01 | Comando `calib` | Duración de `calib` en D5 | Referencia de bloqueo | 408.882 ms | Figura W2-5 |
+| REQ-SAMP-01 | Comando `calib` | Mayor período de D3 | ≤ 1 ms | 432.332 ms — No cumple | Figura W2-5 |
+| REQ-SAMP-01 | Comando `calib` | Jitter tardío | 0 ms para cumplir el período de 1 ms | 431.332 ms — No cumple | Figura W2-5 |
+| REQ-SAMP-01 | Comando `calib` | `backlog_peak` | 0 ticks acumulados | 432 ticks — No cumple | Figura W2-6 |
 
 La frecuencia media se mantuvo cercana a 1 kHz, pero la actualización de la OLED produjo huecos de hasta 25.58 ms en D3. El comando `calib` bloqueó el único superloop durante 408.882 ms, acumuló 432 ticks y retrasó tanto el muestreo como el control.
 
