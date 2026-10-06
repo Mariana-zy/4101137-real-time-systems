@@ -76,21 +76,21 @@ Each entry cites the `REQ`(s) it verifies.
 **Señales:** D3 muestreo, D4 control, D5 consola, D6 telemetría,
 D7 lote de flujo, D8 OLED y D9 entrada de flujo.
 
-| REQ(s) | Condición | Medición | Criterio | Resultado |
-|---|---|---|---|---:|
-| REQ-SAMP-01 | OLED + caché | Frecuencia media de D3 | Objetivo: ≈ 1 kHz | 1.001 kHz |
-| REQ-SAMP-01 | OLED + caché | Período máximo de D3 | ≤ 1 ms | 23.87 ms — No cumple |
-| REQ-SAMP-01 | OLED + caché | Desviación estándar | Referencia de variación | 1.062 ms |
-| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Frecuencia media de D3 | Objetivo: ≈ 1 kHz | 1.002 kHz |
-| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Período máximo de D3 | ≤ 1 ms | 25.58 ms — No cumple |
-| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | Jitter tardío máximo | 0 ms para cumplir el período de 1 ms | 24.58 ms — No cumple |
-| REQ-SAMP-01, REQ-HMI-01 | OLED + `nocache.conf` | `backlog_peak` normal | 0 ticks acumulados | 30 ticks — No cumple |
-| REQ-FLOW-01 | D3 conectado a D9 | Latencia D9 → D7 | Sin límite numérico definido | 12.5 µs |
-| REQ-FLOW-01 | D3 conectado a D9 | `C_i` de lote de flujo en D7 | Referencia de ejecución | 70.5 µs |
-| REQ-SAMP-01, REQ-CTRL-01 | Comando `calib` | Duración de `calib` en D5 | Referencia de bloqueo | 408.882 ms |
-| REQ-SAMP-01 | Comando `calib` | Mayor período de D3 | ≤ 1 ms | 432.332 ms — No cumple |
-| REQ-SAMP-01 | Comando `calib` | Jitter tardío | 0 ms para cumplir el período de 1 ms | 431.332 ms — No cumple |
-| REQ-SAMP-01 | Comando `calib` | `backlog_peak` | 0 ticks acumulados | 432 ticks — No cumple |
+| **Medición** | **Valor obtenido** | **Referencia** |
+|---|---:|---|
+| Período real de muestreo, promedio | **999 µs** | 1000 µs |
+| Jitter máximo de muestreo durante ≥ 30 s | **22 870 µs** | Línea base con OLED y caché |
+| Latencia ISR → servicio del superloop, pulso de flujo | **12.5 µs** | D9 → D7 |
+| Jitter máximo de muestreo con la caché flash desactivada | **24 580 µs** | Aumentó ≈ 1710 µs frente a la línea base |
+| Jitter de muestreo con el comando bloqueante activo | **431 332 µs** | Comando `calib` |
+| `backlog_peak`, inactivo → durante el comando bloqueante | **30 → 432 ticks** | Contador interno del firmware |
+
+> **Criterio usado para jitter máximo tardío:**
+>
+> `jitter = período máximo observado − 1000 µs`
+>
+> Este valor indica cuánto se retrasó la ejecución de muestreo frente a su
+> período nominal de 1 ms.
 
 La frecuencia media se mantuvo cercana a 1 kHz, pero la actualización de la OLED produjo huecos de hasta 25.58 ms en D3. El comando `calib` bloqueó el único superloop durante 408.882 ms, acumuló 432 ticks y retrasó tanto el muestreo como el control.
 
