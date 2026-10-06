@@ -1,4 +1,4 @@
-# RET — Timing Evidence Report
+# RET — Informe de Evidencia de Tiempos
 
 **Grupo:** `María Prieto Ortega` `Rafael Torres Choperena` `Mariana Zuluaga Yepes`  ·  **Placa:** `Nucleo-L476RG`
 
