@@ -89,6 +89,16 @@ K_MSGQ_DEFINE(tick_q, sizeof(uint32_t), 8, 4);
 
 static atomic_t backlog_peak;
 static atomic_t lat_peak_us;
+static atomic_t sample_jitter_peak_us;
+static atomic_t control_period_peak_us;
+
+static void update_peak(atomic_t *peak, atomic_val_t value)
+{
+	if (value > atomic_get(peak)) {
+		atomic_set(peak, value);
+	}
+}
+
 K_SEM_DEFINE(control_sem, 0, 1);
 
 static void tick_isr(struct k_timer *t)
@@ -469,14 +479,17 @@ static void cmd_calib(void)
 static void console_handle(char *line)
 {
 	if (strcmp(line, "help") == 0) {
-		printk("commands: help status joy set <mv> clear calib threads\n");
+		printk("commands: help status joy set <mv> clear calib threads timing reset\n");
 	} else if (strcmp(line, "status") == 0) {
 		printk("p=%d mV sp=%d mV duty=%d%% flow_x100=%d estop=%d "
-		       "batches=%u backlog_peak=%ld lat_peak_us=%ld\n",
+		       "batches=%u backlog_peak=%ld lat_peak_us=%ld "
+		       "samp_jitter_peak_us=%ld ctrl_period_peak_us=%ld\n",
 		       pressure_mv, setpoint_mv, duty_pct,
 		       (int)(flow_lpm * 100.0f), (int)estop, flow_batches,
 		       (long)atomic_get(&backlog_peak),
-		       (long)atomic_get(&lat_peak_us));
+		       (long)atomic_get(&lat_peak_us),
+		       (long)atomic_get(&sample_jitter_peak_us),
+		       (long)atomic_get(&control_period_peak_us));
 	} else if (strcmp(line, "joy") == 0) {
 		printk("joystick raw: %d mV\n", joystick_mv);
 	} else if (strncmp(line, "set ", 4) == 0) {
@@ -490,6 +503,12 @@ static void console_handle(char *line)
 		cmd_calib();
 	} else if (strcmp(line, "threads") == 0) {
 		thread_analyzer_print(0);
+	} else if (strcmp(line, "timing reset") == 0) {
+		atomic_set(&backlog_peak, 0);
+		atomic_set(&lat_peak_us, 0);
+		atomic_set(&sample_jitter_peak_us, 0);
+		atomic_set(&control_period_peak_us, 0);
+		printk("timing statistics reset\n");
 	} else if (line[0] != '\0') {
 		printk("? (try: help)\n");
 	}
@@ -565,6 +584,7 @@ static void init_hw(void)
 static void sampling_thread(void *p1, void *p2, void *p3)
 {
 	uint32_t released;
+	uint32_t last_start = 0;
 	int control_div = 0;
 
 	while (1) {
@@ -573,10 +593,22 @@ static void sampling_thread(void *p1, void *p2, void *p3)
 		atomic_val_t lat =
 			k_cyc_to_us_floor32(k_cycle_get_32() - released);
 
-		if (lat > atomic_get(&lat_peak_us)) {
-			atomic_set(&lat_peak_us, lat);
+		update_peak(&lat_peak_us, lat);
+
+		uint32_t now = k_cycle_get_32();
+
+		if (last_start != 0U) {
+			uint32_t period_us =
+				k_cyc_to_us_floor32(now - last_start);
+			uint32_t jitter_us = period_us > SAMPLE_PERIOD_US ?
+				period_us - SAMPLE_PERIOD_US :
+				SAMPLE_PERIOD_US - period_us;
+
+			update_peak(&sample_jitter_peak_us,
+				    (atomic_val_t)jitter_us);
 		}
 
+		last_start = now;
 		task_sampling();
 
 		if (++control_div >= CONTROL_EVERY) {
@@ -594,8 +626,22 @@ K_THREAD_DEFINE(sampling_tid, SAMPLING_STACK, sampling_thread,
 
 static void control_thread(void *p1, void *p2, void *p3)
 {
+	uint32_t last_start = 0;
+
 	while (1) {
 		k_sem_take(&control_sem, K_FOREVER);
+
+		uint32_t now = k_cycle_get_32();
+
+		if (last_start != 0U) {
+			uint32_t period_us =
+				k_cyc_to_us_floor32(now - last_start);
+
+			update_peak(&control_period_peak_us,
+				    (atomic_val_t)period_us);
+		}
+
+		last_start = now;
 		task_control();
 	}
 }
