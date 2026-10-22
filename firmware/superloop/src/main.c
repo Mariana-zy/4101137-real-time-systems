@@ -91,6 +91,8 @@ static atomic_t backlog_peak;
 static atomic_t lat_peak_us;
 static atomic_t sample_jitter_peak_us;
 static atomic_t control_period_peak_us;
+static atomic_t ctx_gap_peak_us;
+static atomic_t control_release_cycle;
 
 static void update_peak(atomic_t *peak, atomic_val_t value)
 {
@@ -483,13 +485,15 @@ static void console_handle(char *line)
 	} else if (strcmp(line, "status") == 0) {
 		printk("p=%d mV sp=%d mV duty=%d%% flow_x100=%d estop=%d "
 		       "batches=%u backlog_peak=%ld lat_peak_us=%ld "
-		       "samp_jitter_peak_us=%ld ctrl_period_peak_us=%ld\n",
+		       "samp_jitter_peak_us=%ld ctrl_period_peak_us=%ld "
+"ctx_gap_peak_us=%ld\n",
 		       pressure_mv, setpoint_mv, duty_pct,
 		       (int)(flow_lpm * 100.0f), (int)estop, flow_batches,
 		       (long)atomic_get(&backlog_peak),
 		       (long)atomic_get(&lat_peak_us),
 		       (long)atomic_get(&sample_jitter_peak_us),
-		       (long)atomic_get(&control_period_peak_us));
+		       (long)atomic_get(&control_period_peak_us),
+(long)atomic_get(&ctx_gap_peak_us));
 	} else if (strcmp(line, "joy") == 0) {
 		printk("joystick raw: %d mV\n", joystick_mv);
 	} else if (strncmp(line, "set ", 4) == 0) {
@@ -508,6 +512,8 @@ static void console_handle(char *line)
 		atomic_set(&lat_peak_us, 0);
 		atomic_set(&sample_jitter_peak_us, 0);
 		atomic_set(&control_period_peak_us, 0);
+		atomic_set(&ctx_gap_peak_us, 0);
+		atomic_set(&control_release_cycle, 0);
 		printk("timing statistics reset\n");
 	} else if (line[0] != '\0') {
 		printk("? (try: help)\n");
@@ -613,6 +619,9 @@ static void sampling_thread(void *p1, void *p2, void *p3)
 
 		if (++control_div >= CONTROL_EVERY) {
 			control_div = 0;
+
+			atomic_set(&control_release_cycle,
+		  		(atomic_val_t)k_cycle_get_32());
 			k_sem_give(&control_sem);
 		}
 	}
@@ -632,6 +641,16 @@ static void control_thread(void *p1, void *p2, void *p3)
 		k_sem_take(&control_sem, K_FOREVER);
 
 		uint32_t now = k_cycle_get_32();
+		uint32_t released =
+			(uint32_t)atomic_get(&control_release_cycle);
+
+		if (released != 0U) {
+			uint32_t ctx_gap_us =
+				k_cyc_to_us_floor32(now - released);
+
+			update_peak(&ctx_gap_peak_us,
+				    (atomic_val_t)ctx_gap_us);
+		}
 
 		if (last_start != 0U) {
 			uint32_t period_us =
