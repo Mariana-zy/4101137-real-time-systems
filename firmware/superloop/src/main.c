@@ -84,19 +84,25 @@ if (p->port) {
 
 /* Sampling tick: the ISR only raises a flag; the loop discovers it whenever it
  * next comes around. If the loop was busy, ticks pile up here. */
-static atomic_t ticks_pending;
-static atomic_t backlog_peak; /* worst backlog seen — `status` reports it */
+K_MSGQ_DEFINE(tick_q, sizeof(uint32_t), 8, 4);
+
+static atomic_t backlog_peak;
+static atomic_t lat_peak_us;
+static atomic_t control_pending;
 
 static void tick_isr(struct k_timer *t)
 {
+	uint32_t released = k_cycle_get_32();
 
-/* TASK 2 — */
-atomic_val_t backlog = atomic_inc(&ticks_pending) + 1;
+	k_msgq_put(&tick_q, &released, K_NO_WAIT);
 
-if (backlog > atomic_get(&backlog_peak)) {
-    atomic_set(&backlog_peak, backlog);
+	atomic_val_t backlog = k_msgq_num_used_get(&tick_q);
+
+	if (backlog > atomic_get(&backlog_peak)) {
+		atomic_set(&backlog_peak, backlog);
+	}
 }
-}
+
 K_TIMER_DEFINE(tick_timer, tick_isr, NULL);
 
 /* Flow pulses: counted in the ISR, processed in the loop in batches. */
@@ -417,10 +423,11 @@ static void console_handle(char *line)
 		printk("commands: help status joy set <mv> clear calib\n");
 	} else if (strcmp(line, "status") == 0) {
 		printk("p=%d mV sp=%d mV duty=%d%% flow_x100=%d estop=%d "
-		       "batches=%u backlog_peak=%ld\n",
+		       "batches=%u backlog_peak=%ld lat_peak_us=%ld\n",
 		       pressure_mv, setpoint_mv, duty_pct,
 		       (int)(flow_lpm * 100.0f), (int)estop, flow_batches,
-		       (long)atomic_get(&backlog_peak));
+		       (long)atomic_get(&backlog_peak),
+			   (long)atomic_get(&lat_peak_us));
 	} else if (strcmp(line, "joy") == 0) {
 		printk("joystick raw: %d mV\n", joystick_mv);
 	} else if (strncmp(line, "set ", 4) == 0) {
@@ -487,6 +494,36 @@ static void init_hw(void)
 	}
 }
 
+#define SAMPLING_PRIO  2
+#define SAMPLING_STACK 1536
+
+static void sampling_thread(void *p1, void *p2, void *p3)
+{
+	uint32_t released;
+	int control_div = 0;
+
+	while (1) {
+		k_msgq_get(&tick_q, &released, K_FOREVER);
+
+		atomic_val_t lat =
+			k_cyc_to_us_floor32(k_cycle_get_32() - released);
+
+		if (lat > atomic_get(&lat_peak_us)) {
+			atomic_set(&lat_peak_us, lat);
+		}
+
+		task_sampling();
+
+		if (++control_div >= CONTROL_EVERY) {
+			control_div = 0;
+			atomic_inc(&control_pending);
+		}
+	}
+}
+
+K_THREAD_DEFINE(sampling_tid, SAMPLING_STACK, sampling_thread,
+		NULL, NULL, NULL, SAMPLING_PRIO, 0, 0);
+
 int main(void)
 {
 	init_hw();
@@ -497,22 +534,16 @@ int main(void)
 		      K_USEC(SAMPLE_PERIOD_US));
 
 /* TASK 3 */
-int control_div = 0;
 
 while (1) {
     task_console();
     task_display();
     task_telemetry();
 
-    if (atomic_get(&ticks_pending) > 0) {
-        atomic_dec(&ticks_pending);
-        task_sampling();
-
-        if (++control_div >= CONTROL_EVERY) {
-            control_div = 0;
-            task_control();
-        }
-    }
+    if (atomic_get(&control_pending) > 0) {
+	atomic_dec(&control_pending);
+	task_control();
+	}
 
     task_flow_batch();
 }
