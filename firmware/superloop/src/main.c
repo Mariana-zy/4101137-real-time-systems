@@ -21,6 +21,7 @@
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/printk.h>
+#include <zephyr/debug/thread_analyzer.h>
 #ifdef CONFIG_CHARACTER_FRAMEBUFFER
 #include <zephyr/drivers/display.h>
 #include <zephyr/display/cfb.h>
@@ -88,7 +89,7 @@ K_MSGQ_DEFINE(tick_q, sizeof(uint32_t), 8, 4);
 
 static atomic_t backlog_peak;
 static atomic_t lat_peak_us;
-static atomic_t control_pending;
+K_SEM_DEFINE(control_sem, 0, 1);
 
 static void tick_isr(struct k_timer *t)
 {
@@ -109,10 +110,19 @@ K_TIMER_DEFINE(tick_timer, tick_isr, NULL);
 static atomic_t flow_pulses;
 static struct gpio_callback flow_cb;
 
+K_THREAD_STACK_DEFINE(flow_wq_stack, 1024);
+
+static struct k_work_q flow_wq;
+static struct k_work flow_work;
+
+static void flow_work_fn(struct k_work *work);
+
 static void flow_isr(const struct device *dev, struct gpio_callback *cb,
 		     uint32_t pins)
 {
-	atomic_inc(&flow_pulses);
+	if (atomic_inc(&flow_pulses) + 1 >= FLOW_BATCH) {
+		k_work_submit_to_queue(&flow_wq, &flow_work);
+	}
 }
 
 /* ---- State ---------------------------------------------------------------- */
@@ -319,6 +329,12 @@ static void task_flow_batch(void)
 	instr_set(&instr_flow, 0);
 }
 
+static void flow_work_fn(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	task_flow_batch();
+}
+
 static void task_telemetry(void)
 {
 	static int64_t next_ms;
@@ -339,6 +355,23 @@ static void task_telemetry(void)
 
 	instr_set(&instr_tele, 0);
 }
+
+#define TELEMETRY_PRIO  8
+#define TELEMETRY_STACK 2048
+
+static void telemetry_thread(void *p1, void *p2, void *p3)
+{
+	int64_t next = k_uptime_get() + TELEMETRY_MS;
+
+	while (1) {
+		k_sleep(K_TIMEOUT_ABS_MS(next));
+		task_telemetry();
+		next += TELEMETRY_MS;
+	}
+}
+
+K_THREAD_DEFINE(telemetry_tid, TELEMETRY_STACK, telemetry_thread,
+		NULL, NULL, NULL, TELEMETRY_PRIO, 0, 0);
 
 /* ---- Display (soft "HMI"): SSD1306 pages, redrawn whole ------------------- */
 
@@ -405,29 +438,45 @@ static void task_display(void)
 }
 #endif
 
+#define DISPLAY_PRIO  7
+#define DISPLAY_STACK 2048
+
+static void display_thread(void *p1, void *p2, void *p3)
+{
+	while (1) {
+		task_display();
+		k_msleep(50);
+	}
+}
+
+K_THREAD_DEFINE(display_tid, DISPLAY_STACK, display_thread,
+		NULL, NULL, NULL, DISPLAY_PRIO, 0, 0);
+
 /* ---- Console (firm): poll chars, run a full command synchronously --------- */
 
 static void cmd_calib(void)
 {
-	printk("calibrating zero-flow offset (%d rounds)...\n", CALIB_ROUNDS);
+	printk("calibrating...\n");
+
 	for (int i = 0; i < CALIB_ROUNDS; i++) {
 		(void)read_pressure_mv();
-		k_busy_wait(400); /* sensor settling time between reads */
+		k_busy_wait(400);
 	}
-	printk("calibration done\n");
+
+	printk("calibration complete\n");
 }
 
 static void console_handle(char *line)
 {
 	if (strcmp(line, "help") == 0) {
-		printk("commands: help status joy set <mv> clear calib\n");
+		printk("commands: help status joy set <mv> clear calib threads\n");
 	} else if (strcmp(line, "status") == 0) {
 		printk("p=%d mV sp=%d mV duty=%d%% flow_x100=%d estop=%d "
 		       "batches=%u backlog_peak=%ld lat_peak_us=%ld\n",
 		       pressure_mv, setpoint_mv, duty_pct,
 		       (int)(flow_lpm * 100.0f), (int)estop, flow_batches,
 		       (long)atomic_get(&backlog_peak),
-			   (long)atomic_get(&lat_peak_us));
+		       (long)atomic_get(&lat_peak_us));
 	} else if (strcmp(line, "joy") == 0) {
 		printk("joystick raw: %d mV\n", joystick_mv);
 	} else if (strncmp(line, "set ", 4) == 0) {
@@ -439,6 +488,8 @@ static void console_handle(char *line)
 		printk("e-stop cleared\n");
 	} else if (strcmp(line, "calib") == 0) {
 		cmd_calib();
+	} else if (strcmp(line, "threads") == 0) {
+		thread_analyzer_print(0);
 	} else if (line[0] != '\0') {
 		printk("? (try: help)\n");
 	}
@@ -466,6 +517,20 @@ static void task_console(void)
 	}
 #endif
 }
+
+#define CONSOLE_PRIO  9
+#define CONSOLE_STACK 2048
+
+static void console_thread(void *p1, void *p2, void *p3)
+{
+	while (1) {
+		task_console();
+		k_msleep(5);
+	}
+}
+
+K_THREAD_DEFINE(console_tid, CONSOLE_STACK, console_thread,
+		NULL, NULL, NULL, CONSOLE_PRIO, 0, 0);
 
 /* ---- Bring-up + the loop -------------------------------------------------- */
 
@@ -516,7 +581,7 @@ static void sampling_thread(void *p1, void *p2, void *p3)
 
 		if (++control_div >= CONTROL_EVERY) {
 			control_div = 0;
-			atomic_inc(&control_pending);
+			k_sem_give(&control_sem);
 		}
 	}
 }
@@ -524,29 +589,37 @@ static void sampling_thread(void *p1, void *p2, void *p3)
 K_THREAD_DEFINE(sampling_tid, SAMPLING_STACK, sampling_thread,
 		NULL, NULL, NULL, SAMPLING_PRIO, 0, 0);
 
+#define CONTROL_PRIO  3
+#define CONTROL_STACK 1024
+
+static void control_thread(void *p1, void *p2, void *p3)
+{
+	while (1) {
+		k_sem_take(&control_sem, K_FOREVER);
+		task_control();
+	}
+}
+
+K_THREAD_DEFINE(control_tid, CONTROL_STACK, control_thread,
+		NULL, NULL, NULL, CONTROL_PRIO, 0, 0);
+
 int main(void)
 {
+	const struct k_work_queue_config cfg = {
+		.name = "flow_wq",
+	};
+
+	k_work_queue_start(&flow_wq, flow_wq_stack,
+			   K_THREAD_STACK_SIZEOF(flow_wq_stack),
+			   5, &cfg);
+	k_work_init(&flow_work, flow_work_fn);
+
 	init_hw();
-	printk("SoilSense Control — superloop build (%s)\n", CONFIG_BOARD);
+	printk("SoilSense Control — kernel build (%s)\n", CONFIG_BOARD);
 	printk("type 'help'\n");
 
 	k_timer_start(&tick_timer, K_USEC(SAMPLE_PERIOD_US),
 		      K_USEC(SAMPLE_PERIOD_US));
-
-/* TASK 3 */
-
-while (1) {
-    task_console();
-    task_display();
-    task_telemetry();
-
-    if (atomic_get(&control_pending) > 0) {
-	atomic_dec(&control_pending);
-	task_control();
-	}
-
-    task_flow_batch();
-}
 
 	return 0;
 }
