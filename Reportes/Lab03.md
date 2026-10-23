@@ -111,6 +111,8 @@ no atiende `ticks_pending`; por ello se observó un período máximo de D3 de
 
 Aunque la guía está diseñada para el ESP32-S3, en este caso se utilizó un ESP32-C6 Super Mini. Sin embargo, el objetivo de la práctica se mantiene: configurar el puerto mediante devicetree y trasladar el muestreo a un hilo de ejecución (thread).
 
+Nota: Coma: Mil, Punto: Decimal
+
 | Medición | Nucleo Lab 2 | C6 superloop | C6 + `sampling thread` |
 |---|---:|---:|---:|
 | Jitter máximo normal | 22.870 ms | 50.446 ms | 2 µs |
