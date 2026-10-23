@@ -2,7 +2,7 @@
 
 **Grupo:** `María Prieto Ortega` `Rafael Torres Choperena` `Mariana Zuluaga Yepes`  ·  **Placa:** `Nucleo-L476RG`
 
-## 1. El sistema y su conjunto de tareas
+## 1. El sistema y su conjunto de tareas 
 
 | ID | Requisito |
 |---|---|
@@ -14,6 +14,7 @@
 | REQ-FLOW-01 | Cuando se acumulen 100 pulsos de flujo, deberá procesar el lote en la siguiente iteración disponible del superloop. |
 | REQ-SAFE-01 | Si se presenta una sobrepresión o se activa la parada de emergencia, el sistema deberá cerrar la válvula para garantizar la seguridad. |
 
+### Tareas y tiempos de ejecución en Nucleo-L476RG (Lab 2)
 
 | Tarea | Req. | Tipo | Período / activación | Fecha límite | `C_i` observado | Método |
 |---|---|---|---|---|---:|---|
@@ -24,7 +25,20 @@
 | Lote de flujo | REQ-FLOW-01 | Firme | Cada 100 pulsos | No definida | 70.5 µs | Ancho de pulso D7, Logic 2 |
 | Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | 25.06 ms | Ancho de pulso D8, Logic 2 |
 
-## Diagrama del superloop — Lab 2, tarea A
+### Tareas y tiempos de ejecución en ESP32-C6 (Lab 3)
+
+| Tarea | Requisito | Tipo | Período | Deadline | `C_i` máximo medido |
+|---|---|---|---:|---:|---:|
+| Muestreo | REQ-SAMP-01 | Duro | 1 ms | 1 ms | 12,937 µs |
+| Control PI | REQ-CTRL-01 | Duro | 10 ms | 10 ms | 34,500 µs |
+| Consola (`calib`) | REQ-CONS-01 | Firme | Esporádica | No definido | 408,623 ms |
+| Telemetría USB | REQ-TELE-01 | Suave | 1 s | Flexible | 50,442 ms |
+| Lote de flujo | REQ-FLOW-01 | Suave | Cada 100 pulsos | No definido | No medido |
+| Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | No medida en C6 |
+
+## Tareas Laboratorios
+
+### Diagrama del superloop — Lab 2, tarea A
 
 ```mermaid
 flowchart TD
@@ -111,18 +125,59 @@ no atiende `ticks_pending`; por ello se observó un período máximo de D3 de
 
 Aunque la guía está diseñada para el ESP32-S3, en este caso se utilizó un ESP32-C6 Super Mini. Sin embargo, el objetivo de la práctica se mantiene: configurar el puerto mediante devicetree y trasladar el muestreo a un hilo de ejecución (thread).
 
-Nota: Coma: Mil, Punto: Decimal
 
 | Medición | Nucleo Lab 2 | C6 superloop | C6 + `sampling thread` |
 |---|---:|---:|---:|
-| Jitter máximo normal | 22.870 ms | 50.446 ms | 2 µs |
-| Período máximo normal | 23.870 ms | 51.446 ms | 1.001 ms |
-| Jitter con `calib` | 431.332 ms | 408.297 ms | 2 µs |
-| Período máximo con `calib` | 432.332 ms | 409.297 ms | 1.001 ms |
+| Jitter máximo normal | 22,870 ms | 50,446 ms | 2 µs |
+| Período máximo normal | 23,870 ms | 51,446 ms | 1,001 ms |
+| Jitter con `calib` | 431,332 ms | 408,297 ms | 2 µs |
+| Período máximo con `calib` | 432,332 ms | 409,297 ms | 1,001 ms |
 | `backlog_peak` con `calib` | 432 ticks | 409 ticks | 0 ticks |
 | `lat_peak_us` | — | — | 9 µs |
-| Período máximo de control con `calib` | — | 416.317 ms | 420.004 ms |
-| Duración de `calib` | 408.882 ms | 407.482 ms | 408.516 ms |
+| Período máximo de control con `calib` | — | 416,317 ms | 420,004 ms |
+| Duración de `calib` | 408,882 ms | 407,482 ms | 408,516 ms |
+
+#### Evidencia del port
+
+El port se realizó mediante
+`firmware/superloop/boards/esp32c6_devkitc_hpcore.overlay`. El archivo define
+los GPIO de la ESP32-C6, la entrada de flujo, la válvula, las señales de
+instrumentación y la consola USB Serial/JTAG.
+
+La aplicación se compiló, se grabó en la placa y respondió al comando `status`.
+La lógica funcional no requirió reescritura para adaptar los pines; los cambios
+dependientes de la placa se concentraron en el overlay.
+
+#### Comparación de silicios
+
+Aunque la ESP32-C6 funciona a una frecuencia mayor que la Nucleo-L476RG, su
+superloop tuvo mayor jitter máximo normal: 50,446 ms frente a 22,870 ms. La
+frecuencia de CPU no determina por sí sola el peor caso: la consola USB,
+`printk`, la caché de flash y las tareas bloqueantes influyen en el tiempo
+máximo observado.
+
+La comparación es indicativa: la Nucleo se midió con analizador lógico y la C6
+con instrumentación interna mediante `k_cycle_get_32()`.
+
+#### Sampling frente a control durante `calib`
+
+Durante `calib`, el hilo de muestreo mantuvo jitter máximo de 2 µs, período
+máximo de 1,001 ms y `backlog_peak=0`; por ello cumple REQ-SAMP-01.
+
+Control permaneció en el superloop y alcanzó un período máximo de 420,004 ms,
+mayor que su deadline de 10 ms. Por tanto, REQ-CTRL-01 no se cumple durante
+`calib`.
+
+#### Estado compartido
+
+| Variable | Escritores | Lectores |
+|---|---|---|
+| `pressure_mv` | Hilo de muestreo | Control, telemetría, pantalla y `status` |
+| `estop` | Hilo de muestreo y comando `clear` | Control, telemetría, pantalla y `status` |
+| `setpoint_mv` | Joystick y comando `set` | Control, telemetría, pantalla y `status` |
+
+El programa funciona en esta prueba porque la C6 tiene un solo núcleo principal
+y usa enteros alineados, pero en C todavía pueden existir carreras de datos.
 
 ## 4. Schedulability analysis
 
