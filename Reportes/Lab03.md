@@ -123,8 +123,10 @@ no atiende `ticks_pending`; por ello se observó un período máximo de D3 de
 
 ### Semana 3 — Comparación de la línea base del C6 y el silicio
 
-Aunque la guía está diseñada para el ESP32-S3, en este caso se utilizó un ESP32-C6 Super Mini. Sin embargo, el objetivo de la práctica se mantiene: configurar el puerto mediante devicetree y trasladar el muestreo a un hilo de ejecución (thread).
-
+Aunque la guía está diseñada para el ESP32-S3, en este caso se utilizó un
+ESP32-C6 Super Mini. Sin embargo, el objetivo de la práctica se mantiene:
+realizar el port mediante devicetree y trasladar el muestreo a un hilo de
+ejecución.
 
 | Medición | Nucleo Lab 2 | C6 superloop | C6 + `sampling thread` |
 |---|---:|---:|---:|
@@ -151,10 +153,9 @@ dependientes de la placa se concentraron en el overlay.
 #### Comparación de silicios
 
 Aunque la ESP32-C6 funciona a una frecuencia mayor que la Nucleo-L476RG, su
-superloop tuvo mayor jitter máximo normal: 50,446 ms frente a 22,870 ms. La
-frecuencia de CPU no determina por sí sola el peor caso: la consola USB,
-`printk`, la caché de flash y las tareas bloqueantes influyen en el tiempo
-máximo observado.
+superloop tuvo mayor jitter máximo normal: 50,446 ms frente a 22,870 ms. La frecuencia de CPU no determina por sí sola el peor caso: la consola USB,
+`printk`, la ejecución desde flash con caché y las tareas bloqueantes influyen
+en el tiempo máximo observado.
 
 La comparación es indicativa: la Nucleo se midió con analizador lógico y la C6
 con instrumentación interna mediante `k_cycle_get_32()`.
