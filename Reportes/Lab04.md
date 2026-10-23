@@ -1,6 +1,6 @@
 # RET — Informe de Evidencia de Tiempos
 
-**Grupo:** `María Prieto Ortega` `Rafael Torres Choperena` `Mariana Zuluaga Yepes`  ·  **Placa:** `Nucleo-L476RG`
+**Grupo:** `María Prieto Ortega` `Rafael Torres Choperena` `Mariana Zuluaga Yepes`  ·  **Placa:** `Nucleo-L476RG` - `ESP32-C6 Super Mini`
 
 ## 1. El sistema y su conjunto de tareas 
 
@@ -79,14 +79,34 @@ flowchart TD
 
 ## 2. ADRs
 
-### ADR-001 — `<title>`
-**Context:** … · **Decision:** … · **Justification (with numbers):** … · **Status:** …
+### ADR-001 — Arquitectura del nodo con kernel multihilo
+
+**Contexto:** En la línea base del superloop de la ESP32-C6, el comando
+`calib` bloqueó muestreo y control durante aproximadamente 408 ms. El jitter
+máximo de muestreo alcanzó 408,297 ms, el período máximo de control alcanzó
+416,317 ms y se acumularon 409 ticks.
+
+**Decisión:** Migrar todas las tareas del superloop a entidades del kernel de
+Zephyr. Muestreo se ejecuta en `sampling_thread`; control en
+`control_thread`; flujo se procesa en la cola de trabajo privada `flow_wq`;
+pantalla, telemetría y consola se ejecutan en sus propios hilos. `main`
+solamente inicializa el hardware, inicia el temporizador y retorna.
+
+**Justificación:** En la versión con kernel, incluso durante `calib`, el jitter
+máximo de muestreo fue 7 µs, el período máximo de control fue 10,005 ms y
+`backlog_peak` permaneció en 0. Esto elimina el bloqueo de aproximadamente
+408 ms que afectaba las tareas críticas en el superloop.
+
+**Costo:** La transición desde la liberación de control hasta su inicio tuvo un
+máximo de 15 µs. Como control se libera 100 veces por segundo, el costo
+estimado es `100 × 15 µs = 1.500 µs/s = 1,5 ms/s`.
+
+**Estado:** Aceptada e implementada.
 
 ## 3. Evidencia por semana
 
-Each entry cites the `REQ`(s) it verifies.
-
-### Semana 2 — línea base del superloop
+### Semana 2 — Línea base del superloop  
+**Requisitos verificados:** REQ-SAMP-01, REQ-CTRL-01, REQ-FLOW-01.
 
 **Placa:** Nucleo-L476RG  
 **Instrumento:** Logic 2  
@@ -121,7 +141,8 @@ superloop aproximadamente 400 ms. El comando se invoca desde
 no atiende `ticks_pending`; por ello se observó un período máximo de D3 de
 432.332 ms y `backlog_peak=432`.
 
-### Semana 3 — Comparación de la línea base del C6 y el silicio
+### Semana 3 — Comparación de la línea base del C6 y el silicio  
+**Requisitos verificados:** REQ-SAMP-01 y REQ-CTRL-01.
 
 Aunque la guía está diseñada para el ESP32-S3, en este caso se utilizó un
 ESP32-C6 Super Mini. Sin embargo, el objetivo de la práctica se mantiene:
@@ -147,8 +168,12 @@ los GPIO de la ESP32-C6, la entrada de flujo, la válvula, las señales de
 instrumentación y la consola USB Serial/JTAG.
 
 La aplicación se compiló, se grabó en la placa y respondió al comando `status`.
-La lógica funcional no requirió reescritura para adaptar los pines; los cambios
-dependientes de la placa se concentraron en el overlay.
+
+El primer commit de la adaptación a ESP32-C6 fue `8e72f6f`:
+
+.../esp32c6_devkitc_hpcore.overlay | 12 +++++
+firmware/superloop/src/main.c       | 37 ++++++++++++++--
+2 files changed, 46 insertions(+), 3 deletions(-)
 
 #### Comparación de silicios
 
@@ -180,13 +205,85 @@ mayor que su deadline de 10 ms. Por tanto, REQ-CTRL-01 no se cumple durante
 El programa funciona en esta prueba porque la C6 tiene un solo núcleo principal
 y usa enteros alineados, pero en C todavía pueden existir carreras de datos.
 
-## 4. Schedulability analysis
+### Semana 4 — Migración completa al kernel y comparación A/B  
+**Requisitos verificados:** REQ-SAMP-01 y REQ-CTRL-01.
+
+En esta semana se completó la migración del superloop a Zephyr. Las tareas se
+organizaron por prioridad: `sampling_thread` (prioridad 2), `control_thread`
+(3), `flow_wq` (5), `display_thread` (7), `telemetry_thread` (8) y
+`console_thread` (9).
+
+La ISR del temporizador publica las liberaciones de muestreo en `tick_q`.
+Cada décima muestra entrega el semáforo `control_sem` para liberar control. La
+ISR de flujo programa `task_flow_batch()` en una cola de trabajo privada. Cada
+hilo bloquea mientras no tiene trabajo, por lo que no consume CPU esperando.
+
+| Medición (ESP32-C6) | C6 superloop, Semana 3 | Predicción, kernel | Kernel, Semana 4 |
+|---|---:|---:|---:|
+| Jitter máximo de muestreo | 50,446 ms | ≤ 10 µs | 7 µs |
+| Jitter máximo de muestreo con `calib` | 408,297 ms | ≤ 10 µs | 7 µs |
+| Período máximo de control con `calib` | 416,317 ms | ≈ 10 ms | 10,005 ms |
+| Latencia ISR → hilo (`lat_peak_us`) | — | ≤ 20 µs | 12 µs |
+| Brecha interna de liberación a inicio de control | — | ≤ 20 µs | 15 µs |
+| Uso máximo de pila de `control_tid` | — | < 1024 bytes | 236 bytes / 1024 bytes asignados |
+
+La brecha de 15 µs se obtuvo mediante instrumentación interna entre la entrega
+de `control_sem` y el inicio de `control_thread`. Es una aproximación al costo
+de cambio de contexto; no equivale a una medición externa visible en GPIO.
+
+Las mediciones se realizaron en la misma ESP32-C6 y bajo las mismas
+condiciones: ejecución normal por al menos 30 segundos y ejecución del comando
+`calib`. Debido a que no se contó con analizador lógico para la C6, los valores
+se obtuvieron mediante instrumentación interna con `k_cycle_get_32()`.
+
+Durante la condición normal, el kernel mantuvo `backlog_peak=0`,
+`samp_jitter_peak_us=7` y `ctrl_period_peak_us=10005`. Durante `calib`, los
+mismos máximos se conservaron: `backlog_peak=0`,
+`samp_jitter_peak_us=7` y `ctrl_period_peak_us=10005`.
+
+La migración elimina el bloqueo que producía el superloop. Antes, `calib`
+impedía atender muestreo y control durante aproximadamente 408 ms. Con el
+kernel, `calib` se ejecuta en el hilo de consola de menor prioridad; muestreo y
+control la interrumpen cuando sus liberaciones están disponibles. Por ello,
+REQ-SAMP-01 y REQ-CTRL-01 se mantienen durante `calib`.
+
+#### Costo del cambio de contexto
+
+Cada 10 muestras, `sampling_thread` libera `control_thread` mediante
+`control_sem` y luego vuelve a bloquearse. La brecha máxima medida entre la
+liberación y el inicio de control fue 15 µs.
+
+Control se libera una vez cada 10 ms, es decir, 100 veces por segundo:
+
+`100 liberaciones/s × 15 µs = 1.500 µs/s = 1,5 ms/s`.
+
+Por tanto, el costo máximo estimado de estas transiciones es 1,5 ms por segundo
+de ejecución, equivalente a aproximadamente 0,15 % de un segundo.
+
+#### Marcas de uso máximo de pila
+
+El comando `threads`, que ejecuta `thread_analyzer_print(0)`, produjo los
+siguientes valores bajo ejecución con telemetría, consola, pantalla y `calib`.
+
+| Hilo o cola de trabajo | Pila usada | Pila asignada | Uso |
+|---|---:|---:|---:|
+| `sampling_tid` | 252 bytes | 1536 bytes | 16 % |
+| `control_tid` | 236 bytes | 1024 bytes | 23 % |
+| `flow_wq` | 268 bytes | 1024 bytes | 26 % |
+| `display_tid` | 220 bytes | 2048 bytes | 10 % |
+| `telemetry_tid` | 660 bytes | 2048 bytes | 32 % |
+| `console_tid` | 804 bytes | 2048 bytes | 39 % |
+
+El hilo más cercano a su límite fue `console_tid`, con 804 de 2048 bytes
+utilizados (39 %). Ninguna pila mostró riesgo de desbordamiento en esta prueba.
+
+## 4. Análisis de planificabilidad
 
 U = ΣC_i/T_i with **measured** C_i; test used (RM / hyperbolic / EDF); RTA as a
 script with its output; blocking B_i if there are mutexes. (Formulas: READINGS.md,
 "The math that does get used".)
 
-## 5. Functional safety (final project)
+## 5. Seguridad funcional (final project)
 
 Declared safe state (failure ⇒ valve closed), watchdog, and the evidence of the
 fail-safe firing.
