@@ -147,8 +147,12 @@ los GPIO de la ESP32-C6, la entrada de flujo, la válvula, las señales de
 instrumentación y la consola USB Serial/JTAG.
 
 La aplicación se compiló, se grabó en la placa y respondió al comando `status`.
-La lógica funcional no requirió reescritura para adaptar los pines; los cambios
-dependientes de la placa se concentraron en el overlay.
+
+El primer commit de la adaptación a ESP32-C6 fue `8e72f6f`:
+
+.../esp32c6_devkitc_hpcore.overlay | 12 +++++
+firmware/superloop/src/main.c       | 37 ++++++++++++++--
+2 files changed, 46 insertions(+), 3 deletions(-)
 
 #### Comparación de silicios
 
