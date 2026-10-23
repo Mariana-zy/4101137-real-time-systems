@@ -241,11 +241,16 @@ Durante la condición normal, el kernel mantuvo `backlog_peak=0`,
 mismos máximos se conservaron: `backlog_peak=0`,
 `samp_jitter_peak_us=7` y `ctrl_period_peak_us=10005`.
 
-La migración elimina el bloqueo que producía el superloop. Antes, `calib`
-impedía atender muestreo y control durante aproximadamente 408 ms. Con el
-kernel, `calib` se ejecuta en el hilo de consola de menor prioridad; muestreo y
-control la interrumpen cuando sus liberaciones están disponibles. Por ello,
-REQ-SAMP-01 y REQ-CTRL-01 se mantienen durante `calib`.
+La migración elimina el bloqueo de aproximadamente 408 ms que producía el
+superloop. Con el kernel, `calib` se ejecuta en el hilo de consola de menor
+prioridad, mientras muestreo y control continúan ejecutándose cerca de sus
+períodos nominales.
+
+La evidencia muestra que el bloqueo dejó de causar incumplimientos de cientos
+de milisegundos. Sin embargo, el período máximo de control fue 10,005 ms, es
+decir, 5 µs superior al deadline estricto de 10 ms. Por tanto, la medición
+demuestra una mejora sustancial, pero no constituye por sí sola una prueba
+formal de cumplimiento estricto de REQ-CTRL-01.
 
 #### Costo del cambio de contexto
 
