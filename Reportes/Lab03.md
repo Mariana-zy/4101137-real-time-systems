@@ -107,7 +107,7 @@ superloop aproximadamente 400 ms. El comando se invoca desde
 no atiende `ticks_pending`; por ello se observó un período máximo de D3 de
 432.332 ms y `backlog_peak=432`.
 
-### Week 3 — Comparación de la línea base del C6 y el silicio
+### Semana 3 — Comparación de la línea base del C6 y el silicio
 
 Aunque la guía está diseñada para el ESP32-S3, en este caso se utilizó un ESP32-C6 Super Mini. Sin embargo, el objetivo de la práctica se mantiene: configurar el puerto mediante devicetree y trasladar el muestreo a un hilo de ejecución (thread).
 
