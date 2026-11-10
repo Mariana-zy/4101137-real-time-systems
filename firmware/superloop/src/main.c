@@ -93,12 +93,51 @@ static atomic_t sample_jitter_peak_us;
 static atomic_t control_period_peak_us;
 static atomic_t ctx_gap_peak_us;
 static atomic_t control_release_cycle;
+static atomic_t actuator_jitter_max_ms;
+static atomic_t control_error_peak_mv;
+static atomic_t control_error_sum_mv;
+static atomic_t control_error_samples;
+static uint32_t jitter_rng = 0x6d2b79f5U;
 
 static void update_peak(atomic_t *peak, atomic_val_t value)
 {
 	if (value > atomic_get(peak)) {
 		atomic_set(peak, value);
 	}
+}
+
+static uint32_t jitter_delay_ms(uint32_t max_ms)
+{
+	if (max_ms == 0U) {
+		return 0U;
+	}
+
+	jitter_rng ^= jitter_rng << 13;
+	jitter_rng ^= jitter_rng >> 17;
+	jitter_rng ^= jitter_rng << 5;
+
+	return jitter_rng % (max_ms + 1U);
+}
+
+static void reset_jitter_metrics(void)
+{
+	atomic_set(&control_error_peak_mv, 0);
+	atomic_set(&control_error_sum_mv, 0);
+	atomic_set(&control_error_samples, 0);
+}
+
+static void print_jitter_report(void)
+{
+	atomic_val_t samples = atomic_get(&control_error_samples);
+	atomic_val_t sum = atomic_get(&control_error_sum_mv);
+	atomic_val_t mean = samples > 0 ? sum / samples : 0;
+
+	printk("jitter_max_ms=%ld error_peak_mv=%ld "
+	       "error_mean_mv=%ld samples=%ld\n",
+	       (long)atomic_get(&actuator_jitter_max_ms),
+	       (long)atomic_get(&control_error_peak_mv),
+	       (long)mean,
+	       (long)samples);
 }
 
 K_SEM_DEFINE(control_sem, 0, 1);
@@ -309,13 +348,27 @@ static void task_control(void)
 	instr_set(&instr_ctrl, 1);
 
 	if (estop) {
+		/* La parada de emergencia no recibe retraso artificial. */
 		duty_pct = 0;
 	} else {
 		int error = setpoint_mv - pressure_mv;
+		int abs_error = error < 0 ? -error : error;
+		int next_duty;
+		uint32_t max_delay_ms;
+
+		update_peak(&control_error_peak_mv, abs_error);
+		atomic_add(&control_error_sum_mv, abs_error);
+		atomic_inc(&control_error_samples);
 
 		integral_mv += error / 8;
 		integral_mv = CLAMP(integral_mv, -2000, 2000);
-		duty_pct = CLAMP((error + integral_mv) / 20, 0, 100);
+		next_duty = CLAMP((error + integral_mv) / 20, 0, 100);
+
+		/* Lab 6, tarea C: retraso aleatorio antes de aplicar la válvula. */
+		max_delay_ms = (uint32_t)atomic_get(&actuator_jitter_max_ms);
+		k_msleep(jitter_delay_ms(max_delay_ms));
+
+		duty_pct = next_duty;
 	}
 
 	instr_set(&instr_ctrl, 0);
@@ -481,32 +534,55 @@ static void cmd_calib(void)
 static void console_handle(char *line)
 {
 	if (strcmp(line, "help") == 0) {
-		printk("commands: help status joy set <mv> clear calib threads timing reset\n");
+		printk("commands: help status joy set <mv> clear calib threads "
+		       "timing reset jitter <0|2|5> jitter report\n");
+
 	} else if (strcmp(line, "status") == 0) {
 		printk("p=%d mV sp=%d mV duty=%d%% flow_x100=%d estop=%d "
 		       "batches=%u backlog_peak=%ld lat_peak_us=%ld "
 		       "samp_jitter_peak_us=%ld ctrl_period_peak_us=%ld "
-"ctx_gap_peak_us=%ld\n",
+		       "ctx_gap_peak_us=%ld\n",
 		       pressure_mv, setpoint_mv, duty_pct,
 		       (int)(flow_lpm * 100.0f), (int)estop, flow_batches,
 		       (long)atomic_get(&backlog_peak),
 		       (long)atomic_get(&lat_peak_us),
 		       (long)atomic_get(&sample_jitter_peak_us),
 		       (long)atomic_get(&control_period_peak_us),
-(long)atomic_get(&ctx_gap_peak_us));
+		       (long)atomic_get(&ctx_gap_peak_us));
+
 	} else if (strcmp(line, "joy") == 0) {
 		printk("joystick raw: %d mV\n", joystick_mv);
+
 	} else if (strncmp(line, "set ", 4) == 0) {
 		setpoint_mv = CLAMP(atoi(line + 4), 0, 3300);
 		printk("setpoint = %d mV\n", setpoint_mv);
+
 	} else if (strcmp(line, "clear") == 0) {
 		estop = false;
 		integral_mv = 0;
 		printk("e-stop cleared\n");
+
 	} else if (strcmp(line, "calib") == 0) {
 		cmd_calib();
+
+	} else if (strcmp(line, "jitter report") == 0) {
+		print_jitter_report();
+
+	} else if (strncmp(line, "jitter ", 7) == 0) {
+		int max_ms = atoi(line + 7);
+
+		if (max_ms != 0 && max_ms != 2 && max_ms != 5) {
+			printk("use: jitter 0, jitter 2, or jitter 5\n");
+		} else {
+			atomic_set(&actuator_jitter_max_ms, max_ms);
+			reset_jitter_metrics();
+			printk("actuator jitter set to 0..%d ms; metrics reset\n",
+			       max_ms);
+		}
+
 	} else if (strcmp(line, "threads") == 0) {
 		thread_analyzer_print(0);
+
 	} else if (strcmp(line, "timing reset") == 0) {
 		atomic_set(&backlog_peak, 0);
 		atomic_set(&lat_peak_us, 0);
@@ -514,7 +590,9 @@ static void console_handle(char *line)
 		atomic_set(&control_period_peak_us, 0);
 		atomic_set(&ctx_gap_peak_us, 0);
 		atomic_set(&control_release_cycle, 0);
+		reset_jitter_metrics();
 		printk("timing statistics reset\n");
+
 	} else if (line[0] != '\0') {
 		printk("? (try: help)\n");
 	}
