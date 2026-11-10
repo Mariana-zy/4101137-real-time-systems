@@ -1,0 +1,40 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/* Consola por USB Serial/JTAG integrado de la ESP32-C6 Mini. */
+&usb_serial {
+	status = "okay";
+};
+
+/ {
+	chosen {
+		zephyr,console = &usb_serial;
+		zephyr,shell-uart = &usb_serial;
+	};
+
+	/*
+	 * Señales de instrumentación de la Task B.
+	 * GPIO18: hilo alto/control
+	 * GPIO19: hilo medio/telemetría
+	 * GPIO20: hilo bajo/consola
+	 * GPIO21: sección crítica B
+	 */
+	lab6_instr {
+		compatible = "gpio-leds";
+
+		inv_high: inv_high {
+			gpios = <&gpio0 18 GPIO_ACTIVE_HIGH>;
+		};
+
+		inv_medium: inv_medium {
+			gpios = <&gpio0 19 GPIO_ACTIVE_HIGH>;
+		};
+
+		inv_low: inv_low {
+			gpios = <&gpio0 20 GPIO_ACTIVE_HIGH>;
+		};
+
+		inv_b: inv_b {
+			gpios = <&gpio0 21 GPIO_ACTIVE_HIGH>;
+		};
+	};
+};
