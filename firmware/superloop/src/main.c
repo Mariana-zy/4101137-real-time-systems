@@ -98,6 +98,11 @@ static atomic_t control_error_peak_mv;
 static atomic_t control_error_sum_mv;
 static atomic_t control_error_samples;
 static uint32_t jitter_rng = 0x6d2b79f5U;
+static atomic_t estop_detect_cycle;
+static atomic_t estop_to_valve_peak_us;
+static atomic_t estop_trials;
+static atomic_t calib_duration_us;
+static atomic_t calib_cpu_us;
 
 static void update_peak(atomic_t *peak, atomic_val_t value)
 {
@@ -322,10 +327,16 @@ static void task_sampling(void)
 
 	pressure_mv = read_pressure_mv();
 
-	/* e-stop condition is *detected* here, at 1 kHz... */
-	if (pressure_mv > ESTOP_MV) {
-		estop = true; /* ...but the valve only reacts when control runs */
-	}
+	/*
+	 * Medición “antes”: guarda el instante de detección.
+	 * Aún NO cambia duty_pct aquí; eso se hará después de medir el caso original.
+	 */
+	if (pressure_mv > ESTOP_MV && !estop) {
+	estop = true;
+	duty_pct = 0; /* La válvula se cierra en este mismo muestreo. */
+	atomic_set(&estop_detect_cycle,
+		   (atomic_val_t)k_cycle_get_32());
+}
 
 	/* joystick, decimated to 50 Hz */
 	if (++joy_div >= 20) {
@@ -336,8 +347,33 @@ static void task_sampling(void)
 	/* software PWM on the valve */
 	pwm_phase = (pwm_phase + 1) % PWM_STEPS;
 	if (valve_led.port) {
-		gpio_pin_set_dt(&valve_led,
-				pwm_phase < (duty_pct * PWM_STEPS) / 100);
+		bool valve_high =
+			pwm_phase < (duty_pct * PWM_STEPS) / 100;
+
+		gpio_pin_set_dt(&valve_led, valve_high);
+
+		/*
+		 * Cuando la válvula llega a bajo por primera vez después
+		 * de detectar el e-stop, registra detección → válvula baja.
+		 */
+		if (estop && duty_pct == 0 && !valve_high) {
+			atomic_val_t detected =
+				atomic_get(&estop_detect_cycle);
+
+			if (detected != 0) {
+				uint32_t delay_us =
+					k_cyc_to_us_floor32(
+						k_cycle_get_32() -
+						(uint32_t)detected);
+
+				if (atomic_cas(&estop_detect_cycle,
+					       detected, 0)) {
+					update_peak(&estop_to_valve_peak_us,
+						    (atomic_val_t)delay_us);
+					atomic_inc(&estop_trials);
+				}
+			}
+		}
 	}
 
 	instr_set(&instr_samp, 0);
@@ -521,21 +557,41 @@ K_THREAD_DEFINE(display_tid, DISPLAY_STACK, display_thread,
 
 static void cmd_calib(void)
 {
+	uint32_t start_cycle = k_cycle_get_32();
+	uint32_t cpu_us = 0;
+
 	printk("calibrating...\n");
 
 	for (int i = 0; i < CALIB_ROUNDS; i++) {
+		uint32_t work_start = k_cycle_get_32();
+
 		(void)read_pressure_mv();
-		k_busy_wait(400);
+
+		cpu_us += k_cyc_to_us_floor32(
+			k_cycle_get_32() - work_start);
+
+		/*
+		 * Corrección Lab 6: el hilo de consola espera sin ocupar CPU.
+		 */
+		k_usleep(400);
 	}
 
-	printk("calibration complete\n");
+	uint32_t duration_us =
+		k_cyc_to_us_floor32(k_cycle_get_32() - start_cycle);
+
+	atomic_set(&calib_duration_us, (atomic_val_t)duration_us);
+	atomic_set(&calib_cpu_us, (atomic_val_t)cpu_us);
+
+	printk("calibration complete duration_us=%u cpu_us=%u\n",
+	       duration_us, cpu_us);
 }
 
 static void console_handle(char *line)
 {
 	if (strcmp(line, "help") == 0) {
 		printk("commands: help status joy set <mv> clear calib threads "
-		       "timing reset jitter <0|2|5> jitter report\n");
+		       "timing reset jitter <0|2|5> jitter report "
+		       "estop reset estop report\n");
 
 	} else if (strcmp(line, "status") == 0) {
 		printk("p=%d mV sp=%d mV duty=%d%% flow_x100=%d estop=%d "
@@ -560,6 +616,7 @@ static void console_handle(char *line)
 	} else if (strcmp(line, "clear") == 0) {
 		estop = false;
 		integral_mv = 0;
+		atomic_set(&estop_detect_cycle, 0);
 		printk("e-stop cleared\n");
 
 	} else if (strcmp(line, "calib") == 0) {
@@ -580,6 +637,17 @@ static void console_handle(char *line)
 			       max_ms);
 		}
 
+	} else if (strcmp(line, "estop report") == 0) {
+		printk("estop_trials=%ld estop_to_valve_peak_us=%ld\n",
+		       (long)atomic_get(&estop_trials),
+		       (long)atomic_get(&estop_to_valve_peak_us));
+
+	} else if (strcmp(line, "estop reset") == 0) {
+		atomic_set(&estop_detect_cycle, 0);
+		atomic_set(&estop_to_valve_peak_us, 0);
+		atomic_set(&estop_trials, 0);
+		printk("e-stop statistics reset\n");
+
 	} else if (strcmp(line, "threads") == 0) {
 		thread_analyzer_print(0);
 
@@ -590,6 +658,9 @@ static void console_handle(char *line)
 		atomic_set(&control_period_peak_us, 0);
 		atomic_set(&ctx_gap_peak_us, 0);
 		atomic_set(&control_release_cycle, 0);
+		atomic_set(&estop_detect_cycle, 0);
+		atomic_set(&estop_to_valve_peak_us, 0);
+		atomic_set(&estop_trials, 0);
 		reset_jitter_metrics();
 		printk("timing statistics reset\n");
 

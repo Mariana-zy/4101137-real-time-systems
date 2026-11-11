@@ -1,0 +1,13 @@
+/* Consola por el USB Serial/JTAG integrado de la ESP32-C6 Mini. */
+
+&usb_serial {
+        status = "okay";
+};
+
+/ {
+        chosen {
+                zephyr,console = &usb_serial;
+                zephyr,shell-uart = &usb_serial;
+        };
+};
+
