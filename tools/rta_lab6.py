@@ -1,91 +1,121 @@
 #!/usr/bin/env python3
 """
-Lab 6 - Response-Time Analysis (RTA)
+Lab 6 - Utilizacion y Response-Time Analysis (RTA).
 
-Valores medidos:
-- sampling: C = 12 us, T = 1000 us, prioridad alta.
-- control:  C = 5 us,  T = D = 10000 us.
-- B con mutex y herencia de prioridad: 3046 us.
-
-El caso con k_sem no tiene una cota formal segura de bloqueo, porque
-un semáforo no tiene dueño y no puede aplicar herencia de prioridad.
-Se usa el bloqueo observado de 13086 us solo para comparar el experimento.
+IMPORTANTE:
+Los parametros de Daniela no fueron entregados al grupo.
+Se usan supuestos documentados para completar el escenario de analisis:
+  sensor A: C=2400 us, T=D=8000 us
+  sensor B: C=8000 us, T=D=20000 us
 """
 
-from math import ceil
+from dataclasses import dataclass
+from math import ceil, prod
 
 
-SAMPLE_C_US = 12
-SAMPLE_T_US = 1000
-
-CONTROL_C_US = 5
-CONTROL_T_US = 10000
-CONTROL_D_US = 10000
-
-B_NONE_US = 0
-B_SEM_OBSERVED_US = 13086
-B_MUTEX_US = 3046
+@dataclass(frozen=True)
+class Task:
+    name: str
+    c_us: int
+    t_us: int
+    d_us: int
+    b_us: int = 0
 
 
-def response_time(c_us, deadline_us, blocking_us, higher_priority_tasks):
-    """Itera R = C + B + sum(ceil(R/T_h) * C_h)."""
-    response_us = c_us + blocking_us
-    iterations = [response_us]
+# Tareas periodicas medidas en la ESP32-C6.
+sampling = Task("sampling", c_us=12, t_us=1000, d_us=1000)
+
+# Supuestos: parametros de Daniela no entregados en clase.
+sensor_a = Task("sensor Daniela A (supuesto)",
+                c_us=2400, t_us=8000, d_us=8000)
+
+control = Task("control", c_us=5, t_us=10000, d_us=10000,
+               b_us=3046)
+
+sensor_b = Task("sensor Daniela B (supuesto)",
+                c_us=8000, t_us=20000, d_us=20000)
+
+telemetry = Task("telemetry", c_us=165,
+                 t_us=1_000_000, d_us=1_000_000)
+
+base_tasks = [sampling, control, telemetry]
+all_tasks = [sampling, sensor_a, control, sensor_b, telemetry]
+
+
+def utilization(tasks):
+    return sum(task.c_us / task.t_us for task in tasks)
+
+
+def liu_layland_bound(number_of_tasks):
+    return number_of_tasks * (2 ** (1 / number_of_tasks) - 1)
+
+
+def hyperbolic_product(tasks):
+    return prod(1 + task.c_us / task.t_us for task in tasks)
+
+
+def response_time(task, higher_priority_tasks):
+    """R = C + B + sum(ceil(R / T_h) * C_h)."""
+    response = task.c_us + task.b_us
+    iterations = [response]
 
     while True:
-        next_response_us = c_us + blocking_us
+        next_response = task.c_us + task.b_us
 
-        for higher_c_us, higher_t_us in higher_priority_tasks:
-            next_response_us += ceil(response_us / higher_t_us) * higher_c_us
+        for higher in higher_priority_tasks:
+            next_response += ceil(response / higher.t_us) * higher.c_us
 
-        iterations.append(next_response_us)
+        iterations.append(next_response)
 
-        if next_response_us == response_us:
-            return next_response_us, iterations, next_response_us <= deadline_us
+        if next_response == response:
+            return next_response, iterations, next_response <= task.d_us
 
-        if next_response_us > deadline_us:
-            return next_response_us, iterations, False
+        if next_response > task.d_us:
+            return next_response, iterations, False
 
-        response_us = next_response_us
+        response = next_response
 
 
-def report_case(name, blocking_us):
-    response_us, iterations, meets = response_time(
-        CONTROL_C_US,
-        CONTROL_D_US,
-        blocking_us,
-        [(SAMPLE_C_US, SAMPLE_T_US)],
-    )
-
-    verdict = "CUMPLE" if meets else "NO CUMPLE"
+def print_utilization(name, tasks):
+    u_value = utilization(tasks)
+    ll_bound = liu_layland_bound(len(tasks))
+    hyperbolic = hyperbolic_product(tasks)
 
     print(f"\n{name}")
-    print(f"  B = {blocking_us} us")
-    print(f"  iteraciones R = {' -> '.join(map(str, iterations))} us")
-    print(f"  R_control = {response_us} us")
-    print(f"  deadline  = {CONTROL_D_US} us")
-    print(f"  veredicto = {verdict}")
+    print(f"  U = {u_value:.6f} ({u_value * 100:.4f} %)")
+    print(f"  Liu-Layland = {ll_bound:.6f}")
+    print(f"  Hiperbolico = {hyperbolic:.6f}")
+
+    print("  RM por Liu-Layland:",
+          "GARANTIZADO" if u_value <= ll_bound else "NO GARANTIZADO")
+    print("  RM por test hiperbolico:",
+          "GARANTIZADO" if hyperbolic <= 2 else "NO GARANTIZADO")
+
+
+def print_rta(tasks):
+    print("\nRTA bajo RM con mutex e herencia de prioridad")
+
+    ordered_tasks = sorted(tasks, key=lambda task: task.t_us)
+
+    for index, task in enumerate(ordered_tasks):
+        higher_priority = ordered_tasks[:index]
+        response, iterations, meets = response_time(task, higher_priority)
+
+        print(f"\n  {task.name}")
+        print(f"    C={task.c_us} us, T={task.t_us} us, "
+              f"D={task.d_us} us, B={task.b_us} us")
+        print("    R = " + " -> ".join(map(str, iterations)) + " us")
+        print(f"    Resultado: R={response} us "
+              f"{'CUMPLE' if meets else 'NO CUMPLE'}")
 
 
 def main():
-    print("Lab 6 - RTA de control")
-    print(
-        f"sampling: C={SAMPLE_C_US} us, T={SAMPLE_T_US} us; "
-        f"control: C={CONTROL_C_US} us, D={CONTROL_D_US} us"
-    )
+    print("Lab 6 - Analisis de planificabilidad")
+    print("Nota: las dos tareas de Daniela son supuestos documentados.")
 
-    report_case("Sin contencion", B_NONE_US)
-
-    report_case(
-        "k_sem: bloqueo observado durante inversion "
-        "(no es una cota formal segura)",
-        B_SEM_OBSERVED_US,
-    )
-
-    report_case(
-        "k_mutex con herencia de prioridad",
-        B_MUTEX_US,
-    )
+    print_utilization("Nodo base medido", base_tasks)
+    print_utilization("Nodo con tareas de Daniela supuestas", all_tasks)
+    print_rta(all_tasks)
 
 
 if __name__ == "__main__":
