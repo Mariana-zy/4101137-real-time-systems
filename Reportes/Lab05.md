@@ -36,7 +36,7 @@
 | Lote de flujo | REQ-FLOW-01 | Suave | Cada 100 pulsos | No definido | No medido |
 | Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | No medida en C6 |
 
-> **Nota para Labs 5:** El análisis de planificabilidad usa los `C_i`
+> **Nota para Lab 5:** El análisis de planificabilidad usa los `C_i`
 > finales obtenidos mediante instrumentación/tracing en la ESP32-C6:
 > muestreo = 12 µs, control = 5 µs y telemetría = 165 µs. Los valores de la
 > tabla anterior corresponden a la línea base histórica del Lab 3.
@@ -352,6 +352,9 @@ ISR
 → control_tid blocked
 → console_tid running
 ```
+Aunque `console_tid` estaba listo, el planificador ejecutó primero
+`sampling_tid` y después `control_tid`. Esto confirma que las prioridades del
+kernel se respetaron y que la consola de menor prioridad fue aplazada.
 
 #### Precio de observar el sistema
 
