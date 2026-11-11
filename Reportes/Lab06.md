@@ -41,6 +41,24 @@
 > muestreo = 12 µs, control = 5 µs y telemetría = 165 µs. Los valores de la
 > tabla anterior corresponden a la línea base histórica del Lab 3.
 
+### Tareas y tiempos de ejecución en ESP32-C6 — Labs 4 y 5
+
+| Tarea | Prioridad | Período / deadline | `C_i` máximo |
+|---|---:|---|---:|
+| `sampling_tid` | 2 | 1 ms / 1 ms | 12 µs |
+| `control_tid` | 3 | 10 ms / 10 ms | 5 µs |
+| `flow_wq` | 5 | Cada 100 pulsos / no definido | 165 µs |
+| `display_tid` | 7 | 500 ms / 500 ms | No medido |
+| `telemetry_tid` | 8 | 1 s / 1 s | 165 µs |
+| `console_tid` | 9 | Esporádica / no definido | 400,030 ms |
+
+### Tareas y tiempos de ejecución ESP32-C6 (Lab 6)
+
+| ID | Requisito |
+|---|---|
+| REQ-CALIB-01 | Cuando el operador ingrese el comando `calib`, el sistema deberá completar la calibración dentro de 1 s. |
+| REQ-ESTOP-01 | Cuando se detecte sobrepresión, el sistema deberá llevar la válvula a bajo dentro de 5 ms. |
+
 ## Tareas Laboratorios
 
 ### Diagrama del superloop — Lab 2, tarea A
@@ -122,7 +140,26 @@ del hilo bajo tuvo `B = 3,046 ms`. El RTA calculó
 
 **Estado:** Aceptada e implementada.
 
-### ADR-003 — Corrección de `calib` y e-stop en la fuente del retraso
+### ADR-003 — Captura CTF en RAM para ESP32-C6
+
+**Contexto:** La guía del Lab 5 usa un ESP32-S3 con un puerto para consola y
+otro para CTF. La ESP32-C6 Super Mini tiene un único USB Serial/JTAG, por lo
+que no fue posible transmitir CTF continuamente por UART sin perder la consola.
+
+**Decisión:** Configurar CTF para almacenar eventos en un búfer de RAM de
+65.536 bytes. El búfer se extrajo después mediante JTAG/GDB y se decodificó
+con `trace_viewer.py`.
+
+**Justificación:** La captura conservó eventos de ISR, cambios de contexto,
+estados `ready`, `running` y `blocked`, semáforos y nombres de hilos. El costo
+observado fue un aumento de jitter máximo de muestreo de 7 µs a 43 µs.
+
+**Limitación:** El búfer se llenó y conservó una ventana de aproximadamente
+3,14 s; además, JTAG detiene temporalmente el procesador durante la extracción.
+
+**Estado:** Aceptada e implementada para la ESP32-C6 Super Mini.
+
+### ADR-005 — Corrección de `calib` y e-stop en la fuente del retraso
 
 **Contexto:** Antes de la corrección, `calib` consumió 414,884 ms de CPU y
 duró 417,254 ms. El e-stop tardó hasta 10,002 ms desde la detección hasta que
@@ -135,8 +172,11 @@ y asignar `duty_pct = 0` en `task_sampling()` al detectar sobrepresión.
 su duración total fue 2.042,197 ms debido al tick de 1 kHz. El e-stop bajó de
 10,002 ms a 3 µs.
 
-**Estado:** E-stop aceptado. La reducción de CPU de `calib` fue lograda, pero su
-deadline total de 1 s aún no se cumple.
+**Requisitos afectados:** REQ-CALIB-01 y REQ-ESTOP-01.
+
+**Estado:** REQ-ESTOP-01 cumple: 3 µs < 5 ms. REQ-CALIB-01 no cumple todavía:
+la duración total medida fue 2.042,197 ms, superior a 1 s, aunque el consumo de
+CPU se redujo a 3,001 ms.
 
 ## 3. Evidencia por semana
 
@@ -317,7 +357,63 @@ siguientes valores bajo ejecución con telemetría, consola, pantalla y `calib`.
 El hilo más cercano a su límite fue `console_tid`, con 804 de 2048 bytes
 utilizados (39 %). Ninguna pila mostró riesgo de desbordamiento en esta prueba.
 
+### Semana 5 — Trazado del planificador y preempción
+**Requisitos verificados:** REQ-SAMP-01, REQ-CTRL-01 y REQ-CONS-01.
+
+La traza CTF se realizó en la ESP32-C6 Super Mini mediante un búfer de RAM de
+65.536 bytes, extraído con JTAG/GDB. La captura contenía 2.764 eventos, cinco
+hilos visibles y una ventana de 3.136,906 ms. Se identificaron
+`sampling_tid`, `console_tid`, `control_tid`, `display_tid` e `idle`.
+
+| Medición | Valor obtenido | Contraste |
+|---|---:|---|
+| Cambio de contexto en la traza | 14 µs | `ctx_gap_peak_us` sin tracing: 15 µs |
+| ISR → inicio instrumentado de muestreo | 73 µs | `lat_peak_us` sin tracing: 12 µs |
+| CPU: `sampling_tid` | 56 % | — |
+| CPU: `console_tid` | 13 % | — |
+| CPU: `control_tid` | 6 % | — |
+| CPU: `display_tid` | 0 % | — |
+| CPU: `idle` | 23 % | — |
+| Jitter máximo con tracing | 43 µs | Sin tracing: 7 µs |
+| Sobrecarga de jitter | 36 µs | `43 - 7` |
+
+#### Decisión de prioridad observada
+
+La secuencia observada fue:
+
+```text
+ISR
+→ console_tid ready
+→ sampling_tid ready
+→ sampling_tid running
+→ control_tid ready
+→ sampling_tid blocked
+→ control_tid running
+→ control_tid blocked
+→ console_tid running
+```
+
+#### Precio de observar el sistema
+
+| Magnitud | Tracing activado | Tracing desactivado | Incremento |
+|---|---:|---:|---:|
+| `lat_peak_us` | 48 µs | 12 µs | +36 µs |
+| `samp_jitter_peak_us` | 43 µs | 7 µs | +36 µs |
+| `ctrl_period_peak_us` | 10.048 µs | 10.005 µs | +43 µs |
+| `ctx_gap_peak_us` | 75 µs | 15 µs | +60 µs |
+
+El tracing incrementó el jitter máximo de muestreo en 36 µs. Por ello CTF es
+útil para explicar la secuencia del planificador, pero perturba los tiempos
+medidos.
+
+#### Alcance del búfer de trazado
+
+El búfer CTF alcanzó aproximadamente `pos=65331` y `buffer_full=true`, frente
+a una capacidad de 65.536 bytes. La captura cubrió aproximadamente 3,14 s;
+los eventos posteriores dejaron de almacenarse.
+
 ### Semana 6 - Programación: la teoría, puesta a prueba
+**Requisitos verificados:** REQ-CTRL-01, REQ-CALIB-01 y REQ-ESTOP-01.
 
 #### Predicciones y resultados
 
@@ -361,6 +457,10 @@ La sección crítica medida con `k_mutex` fue `B = 3,046 ms`.
 | CPU usada por `calib` | 414,884 ms | 3,001 ms |
 | E-stop, máximo de ≥5 pruebas | 10,002 ms | 3 µs |
 
+REQ-ESTOP-01 cumple después de la corrección: el máximo medido fue 3 µs,
+menor que el plazo de 5 ms. REQ-CALIB-01 no cumple todavía: `calib` dura
+2.042,197 ms, mayor que el plazo de 1 s, aunque ya no bloquea la CPU.
+
 La ESP32-C6 usa `CONFIG_SYS_CLOCK_TICKS_PER_SEC=1000`; por ello
 `k_usleep(400)` libera CPU pero se redondea a la granularidad temporal del
 kernel y la calibración supera 1 s.
@@ -368,8 +468,6 @@ kernel y la calibración supera 1 s.
 > **Limitación:** La evidencia se obtuvo con instrumentación interna basada en
 > `k_cycle_get_32()` y consola. La guía pedía capturas de analizador lógico,
 > pero no se contó con ese instrumento para la ESP32-C6.
-
-
 
 ## 4. Análisis de planificabilidad
 
@@ -425,7 +523,7 @@ Con `B_control=3,046 ms` medido usando `k_mutex`, el script
 Con `k_sem`, el bloqueo observado fue 13,086 ms y control no cumplió su
 deadline. Con `k_mutex`, la herencia de prioridad permite acotar el bloqueo.
 
-### Ruta de e-stop y ajuste de `calib`
+### Verificación de REQ-ESTOP-01 y REQ-CALIB-01
 
 Antes de ADR-005:
 
@@ -449,6 +547,10 @@ Con la carga supuesta de Daniela queda:
 Antes, `calib` requería 414,884 ms de CPU y no cabía. Después requiere
 3,001 ms de CPU y sí cabe en CPU, pero su duración real de 2.042,197 ms sigue
 superando la deadline de 1 s.
+
+Por tanto, REQ-ESTOP-01 cumple después de ADR-005. REQ-CALIB-01 permanece
+incumplido por duración total, pese a que su consumo de CPU sí cabe dentro del
+presupuesto de CPU calculado.
 
 ## 5. Seguridad funcional (final project)
 
