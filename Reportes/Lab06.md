@@ -557,10 +557,7 @@ presupuesto de CPU calculado.
 
 ## 5. Seguridad funcional (final project)
 
-El estado seguro declarado es válvula cerrada (`duty_pct = 0`). Después de
-ADR-005, la detección de sobrepresión asigna ese valor en el mismo muestreo.
-El máximo medido para detección → válvula baja fue 3 µs en al menos cinco
-pruebas, frente a 10,002 ms antes de la corrección.
+> Pendiente para el proyecto final.
 
 
 
