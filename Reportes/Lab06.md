@@ -392,6 +392,9 @@ ISR
 → control_tid blocked
 → console_tid running
 ```
+Aunque `console_tid` estaba listo, el planificador ejecutó primero
+`sampling_tid` y después `control_tid`. Esto confirma que las prioridades del
+kernel se respetaron y que la consola de menor prioridad fue aplazada.
 
 #### Precio de observar el sistema
 
