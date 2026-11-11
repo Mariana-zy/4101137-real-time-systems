@@ -528,23 +528,38 @@ deadline. Con `k_mutex`, la herencia de prioridad permite acotar el bloqueo.
 
 ### Verificación de REQ-ESTOP-01 y REQ-CALIB-01
 
-Antes de ADR-005:
+Antes de ADR-005, el e-stop era detectado en el muestreo, pero la válvula se cerraba posteriormente desde la tarea de control. Por tanto, la peor espera estimada era:
 
 \[
-t_{e-stop} \leq T_{control}+T_{sampling}
-=10\text{ ms}+1\text{ ms}=11\text{ ms}
+t_{\text{e-stop}} \leq T_{\text{control}} + T_{\text{sampling}}
+= 10\text{ ms} + 1\text{ ms}
+= 11\text{ ms}
 \]
 
-Después de ADR-005, el cierre ocurre dentro del mismo muestreo:
+La medición previa fue de \(10,002\text{ ms}\), por lo que no cumplía el requisito `REQ-ESTOP-01` de cerrar la válvula en máximo \(5\text{ ms}\).
+
+Después de ADR-005, la válvula se cierra directamente cuando el hilo de muestreo detecta la condición de e-stop. Por ello, el retraso queda limitado por la ejecución del propio muestreo:
 
 \[
-t_{e-stop} \leq C_{sampling}=12\text{ µs}<5\text{ ms}
+t_{\text{e-stop}} \leq C_{\text{sampling}}
+= 12\text{ µs}
+< 5\text{ ms}
 \]
 
-Con la carga supuesta de Daniela queda:
+La medición posterior fue de \(3\text{ µs}\), por lo que `REQ-ESTOP-01` sí se cumple.
+
+Con las dos tareas de Daniela asumidas para el análisis, la utilización total es:
 
 \[
-(1-0,712665)\times1s=287,335\text{ ms de CPU por segundo}
+U = 0,712665 = 71,2665\%
+\]
+
+Por tanto, el tiempo de CPU disponible por segundo es:
+
+\[
+(1 - 0,712665)\times 1\text{ s}
+= 0,287335\text{ s}
+= 287,335\text{ ms de CPU por segundo}
 \]
 
 Antes, `calib` requería 414,884 ms de CPU y no cabía. Después requiere
