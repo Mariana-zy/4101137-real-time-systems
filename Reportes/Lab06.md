@@ -495,20 +495,19 @@ resultado debe recalcularse si se reciben parámetros oficiales.
 | Sensor Daniela B | 8.000 µs | 20.000 µs | 0,400 |
 | Telemetría | 165 µs | 1.000.000 µs | 0,000165 |
 
-\[
-U=0,712665=71,2665\%
-\]
+`U = 0,712665 = 71,2665 %`
 
-\[
-U_{LL}=5(2^{1/5}-1)=0,743492
-\]
+`U_LL = 5 × (2^(1/5) − 1) = 0,743492`
 
-Como \(U < U_{LL}\), el conjunto supuesto queda garantizado bajo RM. El test
-hiperbólico también cumple:
+Como:
 
-\[
-(1,012)(1,3)(1,0005)(1,4)(1,000165)=1,843065 \leq 2
-\]
+`U = 0,712665 < U_LL = 0,743492`
+
+el conjunto supuesto queda garantizado bajo planificación RM.
+
+El test hiperbólico también cumple:
+
+`(1,012) × (1,3) × (1,0005) × (1,4) × (1,000165) = 1,843065 ≤ 2`
 
 ### RTA con bloqueo
 
@@ -528,46 +527,33 @@ deadline. Con `k_mutex`, la herencia de prioridad permite acotar el bloqueo.
 
 ### Verificación de REQ-ESTOP-01 y REQ-CALIB-01
 
-Antes de ADR-005, el e-stop era detectado en el muestreo, pero la válvula se cerraba posteriormente desde la tarea de control. Por tanto, la peor espera estimada era:
+Antes de ADR-005, el e-stop era detectado durante el muestreo, pero la válvula se cerraba posteriormente desde la tarea de control. Por ello, la peor espera estimada era:
 
-\[
-t_{\text{e-stop}} \leq T_{\text{control}} + T_{\text{sampling}}
-= 10\text{ ms} + 1\text{ ms}
-= 11\text{ ms}
-\]
+`tiempo e-stop ≤ período de control + período de muestreo`
 
-La medición previa fue de \(10,002\text{ ms}\), por lo que no cumplía el requisito `REQ-ESTOP-01` de cerrar la válvula en máximo \(5\text{ ms}\).
+`tiempo e-stop ≤ 10 ms + 1 ms = 11 ms`
 
-Después de ADR-005, la válvula se cierra directamente cuando el hilo de muestreo detecta la condición de e-stop. Por ello, el retraso queda limitado por la ejecución del propio muestreo:
+La medición previa fue de **10,002 ms**, por lo que no cumplía `REQ-ESTOP-01`, cuyo límite es cerrar la válvula en máximo **5 ms**.
 
-\[
-t_{\text{e-stop}} \leq C_{\text{sampling}}
-= 12\text{ µs}
-< 5\text{ ms}
-\]
+Después de ADR-005, la válvula se cierra directamente cuando el hilo de muestreo detecta la condición de e-stop. Por ello, el retraso queda limitado por la duración del propio muestreo:
 
-La medición posterior fue de \(3\text{ µs}\), por lo que `REQ-ESTOP-01` sí se cumple.
+`tiempo e-stop ≤ C_muestreo = 12 µs < 5 ms`
+
+La medición posterior fue de **3 µs**, por lo que `REQ-ESTOP-01` sí se cumple.
 
 Con las dos tareas de Daniela asumidas para el análisis, la utilización total es:
 
-\[
-U = 0,712665 = 71,2665\%
-\]
+`U = 0,712665 = 71,2665 %`
 
 Por tanto, el tiempo de CPU disponible por segundo es:
 
-\[
-(1 - 0,712665)\times 1\text{ s}
-= 0,287335\text{ s}
-= 287,335\text{ ms de CPU por segundo}
-\]
+`(1 − 0,712665) × 1 s = 0,287335 s = 287,335 ms de CPU por segundo`
 
-Antes, `calib` requería 414,884 ms de CPU y no cabía. Después requiere
-3,001 ms de CPU y sí cabe en CPU, pero su duración real de 2.042,197 ms sigue
-superando la deadline de 1 s.
+La versión original de `calib` consumía aproximadamente **414,884 ms de CPU**, por lo que no cabría dentro de ese presupuesto. Después de ADR-005, `calib` consume aproximadamente **3,001 ms de CPU**, por lo que sí cabe.
 
-Por tanto, REQ-ESTOP-01 cumple después de ADR-005. REQ-CALIB-01 permanece
-incumplido por duración total, pese a que su consumo de CPU sí cabe dentro del
+Sin embargo, su duración total medida fue de **2,042 s**. Es decir, la modificación reduce mucho el uso de CPU, pero no cumple un posible plazo total de **1 s** para terminar la calibración.
+
+Por tanto, REQ-ESTOP-01 cumple después de ADR-005. REQ-CALIB-01 permanece incumplido por duración total, pese a que su consumo de CPU sí cabe dentro del
 presupuesto de CPU calculado.
 
 ## 5. Seguridad funcional (final project)
