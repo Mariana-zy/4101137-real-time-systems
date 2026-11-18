@@ -19,11 +19,12 @@
 | Tarea | Req. | Tipo | Período / activación | Fecha límite | `C_i` observado | Método |
 |---|---|---|---|---|---:|---|
 | Muestreo | REQ-SAMP-01 | Duro | 1 ms | 1 ms | 5 µs | Ancho de pulso D3, Logic 2 |
-| Control | REQ-CTRL-01 | Duro | 10 ms | 10 ms | 2.5 µs | Ancho de pulso D4, Logic 2 |
-| Consola (`help`) | REQ-CONS-01 | Firme | Por evento | No definida | 1.313 ms | Ancho de pulso D5, Logic 2 |
-| Telemetría | REQ-TEL-01 | Suave | 1 s | 1 s | 6.1555 ms | Ancho de pulso D6, Logic 2 |
-| Lote de flujo | REQ-FLOW-01 | Firme | Cada 100 pulsos | No definida | 70.5 µs | Ancho de pulso D7, Logic 2 |
-| Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | 25.06 ms | Ancho de pulso D8, Logic 2 |
+| Control | REQ-CTRL-01 | Duro | 10 ms | 10 ms | 2,5 µs | Ancho de pulso D4, Logic 2 |
+| Consola (`help`) | REQ-CONS-01 | Firme | Por evento | No definida | 1,313 ms | Ancho de pulso D5, Logic 2 |
+| Consola (`calib`) | REQ-CONS-01 | Firme | Por evento | No definida | 408,882 ms | Tiempo en alto de D5, Logic 2 |
+| Telemetría | REQ-TEL-01 | Suave | 1 s | 1 s | 6,1555 ms | Ancho de pulso D6, Logic 2 |
+| Lote de flujo | REQ-FLOW-01 | Firme | Cada 100 pulsos | No definida | 70,5 µs | Ancho de pulso D7, Logic 2 |
+| Pantalla OLED | REQ-HMI-01 | Suave | 500 ms | 500 ms | 25,06 ms | Ancho de pulso D8, Logic 2 |
 
 ### Tareas y tiempos de ejecución en ESP32-C6 (Lab 3)
 
@@ -435,9 +436,7 @@ los eventos posteriores dejaron de almacenarse.
 Se implementó el conjunto de la Figura 4.13: τ1 con `C=2 ms`, `T=D=5 ms` y
 τ2 con `C=4 ms`, `T=D=7 ms`.
 
-\[
-U=\frac{2}{5}+\frac{4}{7}=0,9714
-\]
+`U=2/5+4/7=0,9714`
 
 Con RM, τ2 incumplió su deadline; la primera respuesta registrada fue 7.068 µs
 frente a un deadline de 7.000 µs. Con EDF no hubo incumplimientos observados.
