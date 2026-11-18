@@ -471,6 +471,20 @@ kernel y la calibración supera 1 s.
 > `k_cycle_get_32()` y consola. La guía pedía capturas de analizador lógico,
 > pero no se contó con ese instrumento para la ESP32-C6.
 
+#### Predicciones y resultados del Lab 6
+
+| Medición | Predicción | Valor obtenido | Referencia / lectura |
+|---|---:|---:|---|
+| Fig. 4.13 bajo RM: ¿quién falla y cuándo? | `τ2` falla en 7 ms | `τ2` tardó 7.068 µs y acumuló fallos | RM da prioridad fija a `τ1`; `τ2` supera su deadline de 7 ms |
+| Fig. 4.13 en EDF: fallos | Ninguno | `τ1_misses=0`, `τ2_misses=0` | EDF ejecuta primero el deadline más próximo |
+| R máximo de control, sin bloqueo | 17 µs | 17 µs según RTA | Cumple deadline de 10.000 µs |
+| R máximo de control con `k_sem` | Mayor que 10.000 µs; no cumple | 13.259 µs según RTA; espera medida: 13.086 µs | Existe inversión de prioridad |
+| R máximo de control con `k_mutex` | Menor que 10.000 µs; cumple | 3.099 µs según RTA; espera medida: 3.056 µs | El mutex aplica herencia de prioridad |
+| `B`: sección crítica más larga del hilo bajo | Cerca de 3.000 µs | 3.046 µs | Tiempo que el hilo bajo sostuvo el recurso |
+| `calib`: CPU / duración antes de la reparación | CPU y duración cercanas a 400 ms | 414,884 ms / 417,254 ms | La espera activa ocupa el procesador |
+| `calib`: CPU / duración después de la reparación | CPU baja; duración total mayor | 3,001 ms / 2.042,197 ms | `k_usleep()` libera CPU, pero alarga el comando |
+| E-stop: detección → válvula baja, antes / después | Antes ≈ 11 ms; después menor que 5 ms | 10,002 ms / 3 µs | Antes no cumple; después sí cumple `REQ-ESTOP-01` |
+
 ## 4. Análisis de planificabilidad
 
 ### Supuesto sobre las tareas de Daniela
